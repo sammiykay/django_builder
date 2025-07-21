@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #374151;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Dark theme overrides */
+body {
+  @apply bg-gray-900 text-white;
+}
+
+/* Syntax highlighting for code editor */
+.code-editor {
+  font-family: 'Fira Code', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  line-height: 1.5;
+}
+
+/* Backdrop blur fallback */
+.backdrop-blur-sm {
+  backdrop-filter: blur(8px);
+}
+
+/* Gradient backgrounds */
+.bg-gradient-dark {
+  background: linear-gradient(135deg, #1f2937 0%, #1e3a8a 50%, #1f2937 100%);
+}
+
+/* Animation for hover effects */
+.transition-all {
+  transition: all 0.2s ease-in-out;
+}
+
+/* File tree styles */
+.file-tree-item {
+  @apply flex items-center space-x-2 p-1 rounded text-sm hover:bg-gray-700 cursor-pointer transition-colors;
+}
+
+.file-tree-item.active {
+  @apply bg-gray-700;
+}
+
+/* Terminal styles */
+.terminal {
+  font-family: 'Fira Code', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  @apply bg-gray-900 text-green-400;
+}
+
+.terminal-prompt {
+  @apply text-blue-400;
+}
+
+/* Code syntax highlighting */
+.syntax-keyword {
+  @apply text-purple-400;
+}
+
+.syntax-string {
+  @apply text-green-400;
+}
+
+.syntax-function {
+  @apply text-yellow-400;
+}
+
+.syntax-variable {
+  @apply text-blue-400;
+}
+
+.syntax-comment {
+  @apply text-gray-500;
+}
+
+.syntax-property {
+  @apply text-green-400;
+}
+
+.syntax-value {
+  @apply text-orange-400;
+}
+
+/* Button hover effects */
+.btn-hover {
+  @apply transition-all duration-200 hover:shadow-lg hover:scale-105;
+}
+
+/* Input focus styles */
+.input-focus {
+  @apply focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+/* Navigation styles */
+.nav-link {
+  @apply text-gray-300 hover:text-white transition-colors duration-200;
+}
+
+/* Card styles */
+.card {
+  @apply bg-gray-800 border border-gray-700 rounded-lg transition-all hover:border-blue-500 hover:shadow-lg;
+}
+
+/* Logo styles */
+.logo {
+  @apply w-6 h-6 bg-blue-500 rounded flex items-center justify-center text-xs font-bold;
+}
+
+/* Responsive design helpers */
+@media (max-width: 768px) {
+  .mobile-hidden {
+    display: none;
+  }
+  
+  .mobile-full {
+    width: 100%;
+  }
+}
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Code editor line numbers */
+.line-numbers {
+  @apply text-gray-500 text-right pr-4 select-none;
+  min-width: 3rem;
+}
+
+/* Tabs */
+.tab-active {
+  @apply bg-gray-700 text-white border-b-2 border-blue-500;
+}
+
+.tab-inactive {
+  @apply text-gray-400 hover:text-white hover:bg-gray-700;
+}
+
+/* File icons */
+.file-icon {
+  @apply w-4 h-4;
+}
+
+.file-icon-js {
+  @apply text-yellow-400;
+}
+
+.file-icon-ts {
+  @apply text-blue-400;
+}
+
+.file-icon-css {
+  @apply text-green-400;
+}
+
+.file-icon-html {
+  @apply text-orange-400;
+}
+
+.file-icon-folder {
+  @apply text-blue-400;
+}
+
+/* Status indicators */
+.status-success {
+  @apply text-green-500;
+}
+
+.status-pending {
+  @apply text-gray-500;
+}
+
+.status-error {
+  @apply text-red-500;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply animate-spin rounded-full border-2 border-gray-300 border-t-blue-600;
+}
+
+/* Glassmorphism effect */
+.glass {
+  @apply bg-gray-800 bg-opacity-50 backdrop-blur-sm border border-gray-700;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent;
+}
+
+/* Shadow effects */
+.shadow-glow {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+.shadow-glow-hover:hover {
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+}

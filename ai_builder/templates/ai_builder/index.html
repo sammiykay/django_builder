@@ -1,0 +1,404 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Django AI Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+    <style>
+        #editor { height: 400px; }
+        .chat-container { height: 500px; overflow-y: auto; }
+        .loading { opacity: 0.5; pointer-events: none; }
+        
+        /* Streaming indicators */
+        .streaming-container {
+            border: 2px solid #3b82f6;
+            background: linear-gradient(45deg, #f3f4f6, #e5e7eb);
+            animation: streamingPulse 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes streamingPulse {
+            0% { border-color: #3b82f6; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            100% { border-color: #10b981; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2); }
+        }
+        
+        .progress-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #10b981);
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        
+        .file-item.creating {
+            background-color: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            animation: fileCreating 1s ease-in-out;
+        }
+        
+        @keyframes fileCreating {
+            0% { transform: translateX(-10px); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        
+        .streaming-status {
+            background: linear-gradient(45deg, #3b82f6, #10b981);
+            background-size: 200% 200%;
+            animation: gradientMove 3s ease infinite;
+        }
+        
+        @keyframes gradientMove {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .typing-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #6b7280;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-indicator:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <!-- Login Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold mb-6 text-center">Django AI Builder</h2>
+            
+            <!-- Login Form -->
+            <div id="login-form">
+                <h3 class="text-xl font-semibold mb-4">Login</h3>
+                <form id="login-form-element">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                        <input type="text" id="login-username" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                        <input type="password" id="login-password" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded mb-4">
+                        Login
+                    </button>
+                </form>
+                <button id="show-register" class="w-full text-blue-500 hover:text-blue-600">
+                    Don't have an account? Register
+                </button>
+            </div>
+            
+            <!-- Register Form -->
+            <div id="register-form" class="hidden">
+                <h3 class="text-xl font-semibold mb-4">Register</h3>
+                <form id="register-form-element">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                        <input type="text" id="register-username" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                        <input type="email" id="register-email" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                        <input type="password" id="register-password" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+                        <input type="password" id="register-password-confirm" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                    </div>
+                    <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded mb-4">
+                        Register
+                    </button>
+                </form>
+                <button id="show-login" class="w-full text-blue-500 hover:text-blue-600">
+                    Already have an account? Login
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="main-app" class="hidden">
+        <!-- Header -->
+        <div class="bg-blue-600 text-white p-4">
+            <div class="container mx-auto flex justify-between items-center">
+                <h1 class="text-xl font-bold">Django AI Builder</h1>
+                <div class="flex items-center gap-4">
+                    <span id="user-info">Welcome!</span>
+                    <button id="logout-btn" class="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded">
+                        Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container mx-auto px-4 py-6">
+            <!-- Project Selection -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Projects</h2>
+                    <div class="flex gap-2">
+                        <button id="import-projects-btn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                            Import Existing
+                        </button>
+                        <button id="new-project-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                            New Project
+                        </button>
+                    </div>
+                </div>
+                <div id="projects-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Projects will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Project Workspace -->
+            <div id="project-workspace" class="hidden">
+                <!-- Project Actions -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <div class="flex justify-between items-center">
+                        <h2 id="current-project-name" class="text-xl font-semibold">Project Name</h2>
+                        <div class="flex gap-4">
+                            <button id="start-server-btn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                                Start Server
+                            </button>
+                            <button id="stop-server-btn" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded hidden">
+                                Stop Server
+                            </button>
+                            <button id="project-stats-btn" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                                Stats
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Workspace -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Left Panel - Files -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-semibold">Project Files</h3>
+                            <button id="refresh-files-btn" class="text-blue-500 hover:text-blue-700 p-1 rounded" title="Refresh files">
+                                🔄
+                            </button>
+                        </div>
+                        <div id="file-tree" class="space-y-2 max-h-96 overflow-y-auto">
+                            <!-- Files will be loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Center Panel - Editor -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold">Code Editor</h3>
+                            <div class="flex items-center gap-2">
+                                <span id="current-file-name" class="text-sm text-gray-500">No file selected</span>
+                                <button id="save-file-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm disabled:bg-gray-400" disabled>
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                        <div id="editor" class="border border-gray-300 rounded"></div>
+                    </div>
+
+                    <!-- Right Panel - AI Chat -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-lg font-semibold mb-4">
+                            AI Assistant
+                            <span class="text-sm font-normal text-gray-600">(Build Anything!)</span>
+                        </h3>
+                        
+                        <!-- Quick Start Examples -->
+                        <div id="quick-examples" class="mb-4 hidden">
+                            <div class="text-sm text-gray-600 mb-2">💡 Try these examples:</div>
+                            <div class="grid grid-cols-1 gap-2">
+                                <button class="example-btn text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 p-2 rounded text-left" 
+                                        data-prompt="Create a social media platform with posts, likes, and comments">
+                                    📱 Social Media App
+                                </button>
+                                <button class="example-btn text-xs bg-green-50 hover:bg-green-100 text-green-700 p-2 rounded text-left" 
+                                        data-prompt="Build an e-commerce store with products, shopping cart, and payment processing">
+                                    🛒 E-commerce Store
+                                </button>
+                                <button class="example-btn text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 p-2 rounded text-left" 
+                                        data-prompt="Make a task management app for teams with projects and assignments">
+                                    ✅ Task Manager
+                                </button>
+                                <button class="example-btn text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 p-2 rounded text-left" 
+                                        data-prompt="Create a recipe sharing platform with ingredients and ratings">
+                                    👨‍🍳 Recipe Platform
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="chat-messages" class="chat-container border border-gray-300 rounded p-4 mb-4">
+                            <div class="text-gray-500 text-center text-sm">
+                                🚀 <strong>Build Anything!</strong><br>
+                                Describe any type of application and I'll build it for you:<br>
+                                • Web apps, APIs, dashboards<br>
+                                • Business tools, social platforms<br>
+                                • Educational apps, entertainment<br>
+                                • Or anything else you can imagine!
+                            </div>
+                        </div>
+                        
+                        <!-- Streaming Progress Panel -->
+                        <div id="streaming-progress" class="hidden mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
+                                    <div class="streaming-status text-white px-3 py-1 rounded text-sm font-medium">
+                                        🚀 Building Project
+                                    </div>
+                                    <div class="typing-indicator"></div>
+                                    <div class="typing-indicator"></div>
+                                    <div class="typing-indicator"></div>
+                                </div>
+                                <span id="streaming-progress-text" class="text-sm text-blue-600 font-medium">0%</span>
+                            </div>
+                            <div class="bg-gray-200 rounded-full h-2 mb-2">
+                                <div id="streaming-progress-bar" class="progress-bar h-2 rounded-full" style="width: 0%"></div>
+                            </div>
+                            <div id="streaming-status-text" class="text-sm text-gray-600">Initializing...</div>
+                            
+                            <!-- File Creation Feed -->
+                            <div id="file-creation-feed" class="mt-3 max-h-32 overflow-y-auto space-y-1">
+                                <!-- Live file creation updates will appear here -->
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <textarea id="chat-input" 
+                                   placeholder="Describe what you want to build... (e.g., 'Create a fitness tracking app with workouts and progress charts')"
+                                   class="flex-1 border border-gray-300 rounded px-3 py-2 text-sm resize-none"
+                                   rows="2"></textarea>
+                            <div class="flex flex-col gap-2">
+                                <button id="send-chat-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                                    Send
+                                </button>
+                                <button id="report-error-btn" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded text-sm">
+                                    🚨 Report Error
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Project Info Panel -->
+                        <div id="project-info" class="mt-4 p-3 bg-gray-50 rounded text-sm hidden">
+                            <div class="font-medium text-gray-700 mb-2">Project Info:</div>
+                            <div class="space-y-1 text-xs text-gray-600">
+                                <div>Type: <span id="project-type-display">-</span></div>
+                                <div>Features: <span id="project-features-display">-</span></div>
+                                <div>Complexity: <span id="project-complexity-display">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Terminal -->
+                <div class="bg-black text-green-400 rounded-lg shadow-md p-6 mt-6">
+                    <h3 class="text-lg font-semibold mb-4 text-white">Terminal</h3>
+                    <div id="terminal-output" class="font-mono text-sm h-32 overflow-y-auto p-4 bg-gray-900 rounded">
+                        <div class="text-gray-400">Django AI Builder Terminal - Ready</div>
+                    </div>
+                    <div class="flex gap-2 mt-4">
+                        <input type="text" id="command-input" 
+                               placeholder="python manage.py ..."
+                               class="flex-1 bg-gray-800 text-white border border-gray-600 rounded px-3 py-2">
+                        <button id="execute-cmd-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                            Execute
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview -->
+                <div id="preview-panel" class="bg-white rounded-lg shadow-md p-6 mt-6 hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Django App Preview</h3>
+                        <button id="refresh-preview-btn" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded">
+                            Refresh
+                        </button>
+                    </div>
+                    <iframe id="app-preview" class="w-full h-96 border border-gray-300 rounded"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Project Modal -->
+    <div id="project-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-40">
+        <div class="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+            <h3 class="text-xl font-semibold mb-4">Create New Project</h3>
+            <form id="project-form">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Project Name</label>
+                    <input type="text" id="project-name" class="w-full border border-gray-300 rounded px-3 py-2" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                    <textarea id="project-description" class="w-full border border-gray-300 rounded px-3 py-2" rows="3"></textarea>
+                </div>
+                <div class="flex gap-4">
+                    <button type="button" id="cancel-project-btn" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded">
+                        Cancel
+                    </button>
+                    <button type="submit" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded">
+                        Create
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Error Report Modal -->
+    <div id="error-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-40">
+        <div class="bg-white rounded-lg p-8 max-w-lg w-full mx-4">
+            <h3 class="text-xl font-semibold mb-4 text-red-600">🚨 Report Error</h3>
+            <form id="error-form">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Error Message</label>
+                    <textarea id="error-message" class="w-full border border-gray-300 rounded px-3 py-2" rows="4" 
+                              placeholder="Paste the error message here..." required></textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Error Type</label>
+                    <select id="error-type" class="w-full border border-gray-300 rounded px-3 py-2">
+                        <option value="runtime_error">Runtime Error</option>
+                        <option value="syntax_error">Syntax Error</option>
+                        <option value="import_error">Import Error</option>
+                        <option value="template_error">Template Error</option>
+                        <option value="database_error">Database Error</option>
+                        <option value="url_error">URL Error</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Error Source (Optional)</label>
+                    <input type="text" id="error-source" class="w-full border border-gray-300 rounded px-3 py-2" 
+                           placeholder="e.g., views.py, models.py, or URL where error occurred">
+                </div>
+                <div class="flex gap-4">
+                    <button type="button" id="cancel-error-btn" class="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded">
+                        Cancel
+                    </button>
+                    <button type="submit" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded">
+                        🔧 Fix Error
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="{% static 'js/app.js' %}"></script>
+</body>
+</html>

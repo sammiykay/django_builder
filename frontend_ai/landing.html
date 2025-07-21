@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Django AI Builder - Create Django Projects with AI</title>
+    <meta name="description" content="Build complete Django applications effortlessly with AI-powered project generation. Create, deploy, and manage Django projects in minutes.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="landing-styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="url(#gradient)"/>
+                    <path d="M8 12L16 8L24 12V20L16 24L8 20V12Z" stroke="white" stroke-width="2" fill="none"/>
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#667eea"/>
+                            <stop offset="100%" style="stop-color:#764ba2"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="logo-text">Django AI Builder</span>
+            </div>
+            
+            <ul class="nav-menu" id="nav-menu">
+                <li><a href="#hero" class="nav-link">Home</a></li>
+                <li><a href="#features" class="nav-link">Features</a></li>
+                <li><a href="#how-it-works" class="nav-link">How it Works</a></li>
+                <li><a href="#pricing" class="nav-link">Pricing</a></li>
+                <li><a href="#contact" class="nav-link">Contact</a></li>
+            </ul>
+            
+            <div class="nav-actions">
+                <a href="#" class="btn btn-secondary">Sign In</a>
+                <a href="#" class="btn btn-primary">Get Started</a>
+            </div>
+            
+            <div class="hamburger" id="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="hero">
+        <div class="hero-background">
+            <div class="gradient-orb orb-1"></div>
+            <div class="gradient-orb orb-2"></div>
+            <div class="gradient-orb orb-3"></div>
+        </div>
+        
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="title-line fade-in-up">Build Django Projects</span>
+                    <span class="title-line fade-in-up delay-1">with <span class="gradient-text">AI Power</span></span>
+                </h1>
+                
+                <p class="hero-description fade-in-up delay-2">
+                    Transform your ideas into fully functional Django applications in minutes. 
+                    Our AI-powered platform generates complete projects with CRUD operations, 
+                    containerization, and modern UI components.
+                </p>
+                
+                <div class="hero-actions fade-in-up delay-3">
+                    <a href="#" class="btn btn-primary btn-large">
+                        Start Building Now
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M4.16669 10H15.8334M15.8334 10L10.8334 5M15.8334 10L10.8334 15" stroke="currentColor" stroke-width="1.67" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+                    <a href="#demo" class="btn btn-secondary btn-large">
+                        Watch Demo
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M6.66669 5L13.3334 10L6.66669 15V5Z" stroke="currentColor" stroke-width="1.67" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+                </div>
+                
+                <div class="hero-stats fade-in-up delay-4">
+                    <div class="stat-item">
+                        <span class="stat-number">1,000+</span>
+                        <span class="stat-label">Projects Created</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number">50+</span>
+                        <span class="stat-label">Templates</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number">99.9%</span>
+                        <span class="stat-label">Uptime</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hero-visual fade-in-up delay-2">
+                <div class="code-preview">
+                    <div class="code-header">
+                        <div class="code-dots">
+                            <span class="dot red"></span>
+                            <span class="dot yellow"></span>
+                            <span class="dot green"></span>
+                        </div>
+                        <span class="code-title">models.py</span>
+                    </div>
+                    <div class="code-content">
+                        <div class="code-line">
+                            <span class="code-keyword">class</span> 
+                            <span class="code-class">User</span><span class="code-punctuation">(</span><span class="code-class">models.Model</span><span class="code-punctuation">):</span>
+                        </div>
+                        <div class="code-line">
+                            <span class="code-indent">    </span><span class="code-attribute">name</span> <span class="code-operator">=</span> <span class="code-class">models.CharField</span><span class="code-punctuation">(</span><span class="code-string">max_length=100</span><span class="code-punctuation">)</span>
+                        </div>
+                        <div class="code-line">
+                            <span class="code-indent">    </span><span class="code-attribute">email</span> <span class="code-operator">=</span> <span class="code-class">models.EmailField</span><span class="code-punctuation">()</span>
+                        </div>
+                        <div class="code-line typing-animation">
+                            <span class="code-indent">    </span><span class="code-attribute">created_at</span> <span class="code-operator">=</span> <span class="code-class">models.DateTimeField</span><span class="code-punctuation">(</span><span class="code-string">auto_now_add=True</span><span class="code-punctuation">)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Why Choose Django AI Builder?</h2>
+                <p class="section-description">
+                    Powerful features designed to accelerate your Django development workflow
+                </p>
+            </div>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#667eea" fill-opacity="0.1"/>
+                            <path d="M24 12L32 16V24L24 28L16 24V16L24 12Z" stroke="#667eea" stroke-width="2" fill="none"/>
+                            <circle cx="24" cy="20" r="2" fill="#667eea"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">AI-Powered Generation</h3>
+                    <p class="feature-description">
+                        Leverage advanced AI to generate complete Django projects with models, views, and templates automatically.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#764ba2" fill-opacity="0.1"/>
+                            <path d="M14 20H34V32C34 33.1046 33.1046 34 32 34H16C14.8954 34 14 33.1046 14 32V20Z" stroke="#764ba2" stroke-width="2"/>
+                            <path d="M20 20V16C20 14.8954 20.8954 14 22 14H26C27.1046 14 28 14.8954 28 16V20" stroke="#764ba2" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Container Ready</h3>
+                    <p class="feature-description">
+                        Every project comes with Docker configuration for instant deployment and scalability across environments.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#f093fb" fill-opacity="0.1"/>
+                            <path d="M24 14L30 20H26V30H22V20H18L24 14Z" stroke="#f093fb" stroke-width="2"/>
+                            <path d="M34 30V32C34 33.1046 33.1046 34 32 34H16C14.8954 34 14 33.1046 14 32V30" stroke="#f093fb" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Instant Deployment</h3>
+                    <p class="feature-description">
+                        Deploy your projects immediately with our integrated container management and hosting solutions.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#667eea" fill-opacity="0.1"/>
+                            <path d="M16 22V16C16 14.8954 16.8954 14 18 14H30C31.1046 14 32 14.8954 32 16V22" stroke="#667eea" stroke-width="2"/>
+                            <rect x="14" y="22" width="20" height="12" rx="2" stroke="#667eea" stroke-width="2"/>
+                            <circle cx="24" cy="28" r="2" fill="#667eea"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Secure by Default</h3>
+                    <p class="feature-description">
+                        Built-in security best practices, authentication systems, and protected deployment environments.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#764ba2" fill-opacity="0.1"/>
+                            <path d="M14 18H34L32 32H16L14 18Z" stroke="#764ba2" stroke-width="2"/>
+                            <path d="M14 18L12 14H8" stroke="#764ba2" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="18" cy="38" r="2" stroke="#764ba2" stroke-width="2"/>
+                            <circle cx="30" cy="38" r="2" stroke="#764ba2" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Full CRUD Operations</h3>
+                    <p class="feature-description">
+                        Complete Create, Read, Update, Delete functionality with beautiful admin interfaces and user forms.
+                    </p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="#f093fb" fill-opacity="0.1"/>
+                            <path d="M24 16V32M16 24H32" stroke="#f093fb" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="24" cy="24" r="10" stroke="#f093fb" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Extensible Architecture</h3>
+                    <p class="feature-description">
+                        Modular design allows easy customization and extension of your generated projects with additional features.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="how-it-works" id="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">How It Works</h2>
+                <p class="section-description">
+                    From idea to deployed application in three simple steps
+                </p>
+            </div>
+            
+            <div class="steps-container">
+                <div class="step">
+                    <div class="step-number">01</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Describe Your Project</h3>
+                        <p class="step-description">
+                            Tell our AI what kind of Django application you want to build. 
+                            Specify features, models, and functionality in plain English.
+                        </p>
+                    </div>
+                    <div class="step-visual">
+                        <div class="chat-bubble">
+                            <p>"Create a blog app with user authentication, post creation, and comments"</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">02</div>
+                    <div class="step-content">
+                        <h3 class="step-title">AI Generates Code</h3>
+                        <p class="step-description">
+                            Our intelligent system analyzes your requirements and generates 
+                            a complete Django project with all necessary files and configurations.
+                        </p>
+                    </div>
+                    <div class="step-visual">
+                        <div class="loading-animation">
+                            <div class="loading-bars">
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                                <div class="bar"></div>
+                            </div>
+                            <p>Generating your project...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="step">
+                    <div class="step-number">03</div>
+                    <div class="step-content">
+                        <h3 class="step-title">Deploy & Customize</h3>
+                        <p class="step-description">
+                            Your project is containerized and ready to deploy. 
+                            Make customizations, add features, and scale as needed.
+                        </p>
+                    </div>
+                    <div class="step-visual">
+                        <div class="deployment-visual">
+                            <div class="container-icon">🚀</div>
+                            <div class="success-message">Project deployed successfully!</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-content">
+                <h2 class="cta-title">Ready to Build Something Amazing?</h2>
+                <p class="cta-description">
+                    Join thousands of developers who are building faster with AI-powered Django generation.
+                </p>
+                <div class="cta-actions">
+                    <a href="#" class="btn btn-primary btn-large">
+                        Get Started Free
+                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                            <path d="M4.16669 10H15.8334M15.8334 10L10.8334 5M15.8334 10L10.8334 15" stroke="currentColor" stroke-width="1.67" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </a>
+                    <a href="#contact" class="btn btn-secondary btn-large">Contact Sales</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer" id="contact">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-main">
+                    <div class="footer-brand">
+                        <div class="footer-logo">
+                            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                                <rect width="32" height="32" rx="8" fill="url(#footerGradient)"/>
+                                <path d="M8 12L16 8L24 12V20L16 24L8 20V12Z" stroke="white" stroke-width="2" fill="none"/>
+                                <defs>
+                                    <linearGradient id="footerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" style="stop-color:#667eea"/>
+                                        <stop offset="100%" style="stop-color:#764ba2"/>
+                                    </linearGradient>
+                                </defs>
+                            </svg>
+                            <span>Django AI Builder</span>
+                        </div>
+                        <p class="footer-description">
+                            Empowering developers to build Django applications faster with AI-powered project generation.
+                        </p>
+                        <div class="social-links">
+                            <a href="#" class="social-link">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M10 0C4.477 0 0 4.477 0 10c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V10h2.54V7.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V10h2.773l-.443 2.89h-2.33v6.988C16.343 19.128 20 14.991 20 10c0-5.523-4.477-10-10-10z"/>
+                                </svg>
+                            </a>
+                            <a href="#" class="social-link">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M20 3.798c-.736.327-1.527.547-2.357.646.847-.508 1.498-1.312 1.804-2.27-.793.47-1.671.812-2.606.996C16.116 2.393 15.069 2 13.926 2c-2.27 0-4.109 1.84-4.109 4.109 0 .322.036.635.106.935C6.44 6.891 3.416 5.267 1.392 2.766c-.354.608-.557 1.315-.557 2.07 0 1.424.725 2.682 1.826 3.417-.673-.021-1.305-.206-1.859-.514v.052c0 1.988 1.414 3.647 3.292 4.023-.344.094-.707.144-1.081.144-.264 0-.521-.026-.771-.074.521 1.624 2.032 2.805 3.821 2.838C5.418 15.849 3.373 16.582 1.102 16.582c-.331 0-.658-.019-.98-.057C1.816 17.998 3.973 18.85 6.29 18.85c7.547 0 11.675-6.252 11.675-11.675 0-.178-.004-.355-.012-.53C18.666 5.351 19.394 4.628 20 3.798z"/>
+                                </svg>
+                            </a>
+                            <a href="#" class="social-link">
+                                <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 0C4.477 0 0 4.484 0 10.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0110 4.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.203 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.942.359.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0020 10.017C20 4.484 15.522 0 10 0z" clip-rule="evenodd"/>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <div class="footer-contact">
+                        <h4 class="footer-title">Get in Touch</h4>
+                        <form class="contact-form">
+                            <div class="form-group">
+                                <input type="email" placeholder="Your email address" required>
+                            </div>
+                            <div class="form-group">
+                                <textarea placeholder="Your message" rows="4" required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Send Message</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="footer-bottom">
+                    <div class="footer-links">
+                        <a href="#">Privacy Policy</a>
+                        <a href="#">Terms of Service</a>
+                        <a href="#">Documentation</a>
+                        <a href="#">Support</a>
+                    </div>
+                    <p class="footer-copyright">
+                        © 2025 Django AI Builder. All rights reserved.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="landing-scripts.js"></script>
+</body>
+</html>

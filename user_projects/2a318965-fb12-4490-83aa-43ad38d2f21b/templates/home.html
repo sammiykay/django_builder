@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <h1>Welcome to Social Sphere</h1>
+        <p class="lead">Connect, Share, and Engage with People Around the World</p>
+        <div class="cta-buttons">
+            {% if not user.is_authenticated %}
+                <a href="{% url 'signup' %}" class="btn btn-primary btn-lg">Get Started</a>
+                <a href="{% url 'login' %}" class="btn btn-outline-light btn-lg">Sign In</a>
+            {% else %}
+                <a href="{% url 'feed' %}" class="btn btn-primary btn-lg">View Feed</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<section class="features-section">
+    <h2>Why Choose Social Sphere?</h2>
+    <div class="features-grid">
+        <div class="feature-card">
+            <i class="fas fa-share-alt"></i>
+            <h3>Rich Media Sharing</h3>
+            <p>Share moments with photos, videos, and beautiful text formatting</p>
+        </div>
+        <div class="feature-card">
+            <i class="fas fa-comments"></i>
+            <h3>Meaningful Conversations</h3>
+            <p>Engage in threaded discussions and connect with like-minded people</p>
+        </div>
+        <div class="feature-card">
+            <i class="fas fa-bell"></i>
+            <h3>Real-time Updates</h3>
+            <p>Never miss an interaction with instant notifications</p>
+        </div>
+        <div class="feature-card">
+            <i class="fas fa-hashtag"></i>
+            <h3>Discover Content</h3>
+            <p>Find trending topics through hashtags and smart search</p>
+        </div>
+    </div>
+</section>
+
+<section class="showcase-section">
+    <div class="showcase-content">
+        <div class="showcase-text">
+            <h2>Express Yourself</h2>
+            <p>Create stunning posts with our advanced editor, apply filters to your images, and share your story with the world.</p>
+            <ul class="feature-list">
+                <li><i class="fas fa-check"></i> Rich text formatting</li>
+                <li><i class="fas fa-check"></i> Image filters and editing</li>
+                <li><i class="fas fa-check"></i> Video sharing</li>
+                <li><i class="fas fa-check"></i> Mention friends</li>
+            </ul>
+        </div>
+        <div class="showcase-image">
+            <img src="{% static 'images/showcase-features.png' %}" alt="Platform features">
+        </div>
+    </div>
+</section>
+
+<section class="community-section">
+    <h2>Join Our Growing Community</h2>
+    <div class="stats-container">
+        <div class="stat-item">
+            <span class="stat-number">1M+</span>
+            <span class="stat-label">Active Users</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">5M+</span>
+            <span class="stat-label">Daily Posts</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">10M+</span>
+            <span class="stat-label">Interactions</span>
+        </div>
+    </div>
+    <div class="cta-bottom">
+        <h3>Ready to get started?</h3>
+        {% if not user.is_authenticated %}
+            <a href="{% url 'signup' %}" class="btn btn-primary btn-lg">Join Now</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="testimonials-section">
+    <h2>What Our Users Say</h2>
+    <div class="testimonials-grid">
+        <div class="testimonial-card">
+            <p>"The best social platform I've used. The real-time features are amazing!"</p>
+            <div class="testimonial-author">- Sarah J.</div>
+        </div>
+        <div class="testimonial-card">
+            <p>"Love the image editing tools and the engaging community."</p>
+            <div class="testimonial-author">- Mike R.</div>
+        </div>
+        <div class="testimonial-card">
+            <p>"Finally, a platform that puts user experience first!"</p>
+            <div class="testimonial-author">- Alex T.</div>
+        </div>
+    </div>
+</section>
+{% endblock %}

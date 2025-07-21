@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(mv:*)",
+      "Bash(rmdir:*)",
+      "Bash(true)",
+      "Bash(mkdir:*)",
+      "Bash(python3 manage.py makemigrations:*)",
+      "Bash(python manage.py shell:*)",
+      "Bash(python3 -m pip install:*)",
+      "Bash(python manage.py:*)",
+      "Bash(grep:*)",
+      "Bash(python3 manage.py runserver:*)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(source:*)",
+      "Bash(find:*)",
+      "Bash(/mnt/c/users/sammiykay/desktop/projects/django_ai_builder/venv/Scripts/python.exe manage.py showmigrations)",
+      "Bash(. venv/Scripts/activate)",
+      "Bash(python:*)",
+      "Bash(venv/Scripts/python.exe manage.py makemigrations:*)",
+      "Bash(venv/Scripts/python.exe:*)",
+      "Bash(pkill:*)",
+      "Bash(./venv/Scripts/python.exe manage.py makemigrations authentication)",
+      "Bash(./venv/Scripts/python.exe manage.py makemigrations ai_builder)",
+      "Bash(./venv/Scripts/python.exe manage.py migrate)",
+      "Bash(npm run build:*)"
+    ],
+    "deny": []
+  }
+}

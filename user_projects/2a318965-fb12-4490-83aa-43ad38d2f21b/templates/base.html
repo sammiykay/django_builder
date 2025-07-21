@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SocialSphere{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm fixed w-full z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <a href="{% url 'home' %}" class="text-2xl font-bold text-blue-600">SocialSphere</a>
+                    </div>
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <a href="{% url 'home' %}" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">Home</a>
+                        <a href="{% url 'explore' %}" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">Explore</a>
+                        <a href="{% url 'notifications' %}" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">Notifications</a>
+                        <a href="{% url 'messages' %}" class="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">Messages</a>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <button type="button" class="bg-blue-600 p-2 rounded-full text-white hover:bg-blue-700">
+                            <i class="fas fa-plus"></i>
+                            <span class="ml-2">Create Post</span>
+                        </button>
+                    </div>
+                    {% if user.is_authenticated %}
+                        <div class="ml-4 relative flex items-center space-x-4">
+                            <div class="relative">
+                                <button class="flex text-sm rounded-full focus:outline-none">
+                                    <img class="h-8 w-8 rounded-full object-cover" src="{{ user.profile.avatar.url }}" alt="Profile">
+                                </button>
+                            </div>
+                            <a href="{% url 'logout' %}" class="text-gray-700 hover:text-blue-600">Logout</a>
+                        </div>
+                    {% else %}
+                        <div class="ml-4 flex items-center space-x-4">
+                            <a href="{% url 'login' %}" class="text-gray-700 hover:text-blue-600">Login</a>
+                            <a href="{% url 'register' %}" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Sign Up</a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Messages/Notifications -->
+    <div class="pt-16">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 mb-4" role="alert">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white shadow-sm mt-8">
+        <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center">
+                <div class="text-gray-500 text-sm">
+                    © 2024 SocialSphere. All rights reserved.
+                </div>
+                <div class="flex space-x-6">
+                    <a href="{% url 'about' %}" class="text-gray-500 hover:text-blue-600">About</a>
+                    <a href="{% url 'privacy' %}" class="text-gray-500 hover:text-blue-600">Privacy</a>
+                    <a href="{% url 'terms' %}" class="text-gray-500 hover:text-blue-600">Terms</a>
+                    <a href="{% url 'contact' %}" class="text-gray-500 hover:text-blue-600">Contact</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

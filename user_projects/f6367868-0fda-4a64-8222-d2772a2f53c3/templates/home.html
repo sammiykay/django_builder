@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <h1>Welcome to Django Boutique</h1>
+        <p class="lead">Discover a curated collection of premium products with a seamless shopping experience</p>
+        <div class="cta-buttons">
+            <a href="{% url 'products' %}" class="btn btn-primary btn-lg">Shop Now</a>
+            <a href="{% url 'signup' %}" class="btn btn-outline-light btn-lg">Create Account</a>
+        </div>
+    </div>
+</div>
+
+<section class="features-section">
+    <div class="container">
+        <h2 class="section-title">Why Choose Django Boutique?</h2>
+        <div class="row features-grid">
+            <div class="col-md-4 feature-card">
+                <i class="fas fa-shopping-bag"></i>
+                <h3>Curated Collection</h3>
+                <p>Browse through our carefully selected products across multiple categories</p>
+            </div>
+            <div class="col-md-4 feature-card">
+                <i class="fas fa-shield-alt"></i>
+                <h3>Secure Shopping</h3>
+                <p>Shop with confidence using our secure payment processing system</p>
+            </div>
+            <div class="col-md-4 feature-card">
+                <i class="fas fa-truck"></i>
+                <h3>Fast Delivery</h3>
+                <p>Track your orders in real-time with our advanced delivery system</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="trending-section">
+    <div class="container">
+        <h2 class="section-title">Trending Now</h2>
+        <div class="row trending-products">
+            {% for product in trending_products %}
+            <div class="col-md-3 product-card">
+                <img src="{{ product.image.url }}" alt="{{ product.name }}">
+                <h4>{{ product.name }}</h4>
+                <p class="price">${{ product.price }}</p>
+                <a href="{% url 'product_detail' product.id %}" class="btn btn-secondary">View Details</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="benefits-section">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6">
+                <h2>Premium Shopping Experience</h2>
+                <ul class="benefits-list">
+                    <li><i class="fas fa-check"></i> Real-time inventory tracking</li>
+                    <li><i class="fas fa-check"></i> Multiple payment options</li>
+                    <li><i class="fas fa-check"></i> Personalized recommendations</li>
+                    <li><i class="fas fa-check"></i> Exclusive discounts</li>
+                    <li><i class="fas fa-check"></i> 24/7 Customer support</li>
+                </ul>
+                <a href="{% url 'about' %}" class="btn btn-primary">Learn More</a>
+            </div>
+            <div class="col-md-6">
+                <img src="{% static 'images/shopping-experience.jpg' %}" alt="Shopping Experience" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="newsletter-section">
+    <div class="container">
+        <h2>Stay Updated</h2>
+        <p>Subscribe to our newsletter for exclusive offers and updates</p>
+        <form class="newsletter-form">
+            <div class="input-group">
+                <input type="email" class="form-control" placeholder="Enter your email">
+                <button type="submit" class="btn btn-primary">Subscribe</button>
+            </div>
+        </form>
+    </div>
+</section>
+
+<style>
+.hero-section {
+    background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('{% static "images/hero-bg.jpg" %}');
+    background-size: cover;
+    color: white;
+    padding: 150px 0;
+    text-align: center;
+}
+
+.features-section {
+    padding: 80px 0;
+    background: #f8f9fa;
+}
+
+.feature-card {
+    text-align: center;
+    padding: 30px;
+}
+
+.feature-card i {
+    font-size: 3em;
+    color: #007bff;
+    margin-bottom: 20px;
+}
+
+.trending-section {
+    padding: 80px 0;
+}
+
+.benefits-section {
+    padding: 80px 0;
+    background: #ffffff;
+}
+
+.benefits-list li {
+    margin: 15px 0;
+    font-size: 1.1em;
+}
+
+.newsletter-section {
+    background: #007bff;
+    color: white;
+    padding: 60px 0;
+    text-align: center;
+}
+
+.newsletter-form {
+    max-width: 500px;
+    margin: 30px auto;
+}
+</style>
+{% endblock %}

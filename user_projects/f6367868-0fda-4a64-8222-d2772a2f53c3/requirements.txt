@@ -1,0 +1,10 @@
+Django==5.0
+psycopg2-binary==2.9.9
+django-environ==0.11.2
+Pillow==10.1.0
+stripe==7.6.0
+celery==5.3.6
+redis==5.0.1
+django-storages==1.14.2
+boto3==1.29.6
+django-allauth==0.58.2
