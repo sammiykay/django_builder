@@ -17,7 +17,7 @@ class ClaudeService:
             logger.info(f"Loading Claude API key from settings: {claude_key[:20] if claude_key else 'None'}...")
             self.client = anthropic.Anthropic(api_key=claude_key)
         self.system_prompt = self._get_django_system_prompt()
-        self.model_name = "claude-3-7-sonnet-20250219"
+        self.model_name = "claude-opus-4-20250514"
     
     def _get_django_system_prompt(self):
         return """You are a Django expert assistant that creates complete, working Django applications.

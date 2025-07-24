@@ -558,7 +558,7 @@ Examples:
         
         try:
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=1000,
                 temperature=0.1,
                 messages=[
@@ -738,7 +738,7 @@ CRITICAL JSON FORMATTING RULES:
         
         try:
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=3000,
                 temperature=0.1,
                 messages=[
@@ -858,7 +858,7 @@ CRITICAL JSON FORMATTING RULES:
         
         try:
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=3000,
                 temperature=0.1,
                 messages=[
@@ -934,7 +934,7 @@ CRITICAL JSON FORMATTING RULES:
         
         try:
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=4000,
                 temperature=0.1,
                 messages=[
@@ -994,7 +994,7 @@ Respond with JSON:
 """
             
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=4000,
                 temperature=0.1,
                 messages=[
@@ -1060,7 +1060,7 @@ Generate simple improvements or additions. Keep it basic and functional.
             
             # Use the code generation part of smart generator
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=4000,
                 temperature=0.1,
                 messages=[

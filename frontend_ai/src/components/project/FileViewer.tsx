@@ -11,9 +11,11 @@ import '../../styles/design-system.css';
 interface FileViewerProps {
   projectId: string;
   filePath: string | null;
+  showHeader?: boolean;
+  showFooter?: boolean;
 }
 
-const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath }) => {
+const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader = true, showFooter = true }) => {
   const [fileContent, setFileContent] = useState<string>('');
   const [editedContent, setEditedContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -172,101 +174,103 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath }) => {
   return (
     <div className="h-full flex flex-col bg-primary">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 sm:p-4 border-b border-secondary bg-secondary shadow-sm">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-sm font-semibold text-primary truncate">
-                {filePath.split('/').pop()}
-              </h3>
-              <div className="flex items-center gap-1 flex-wrap">
-                {isEditing && (
-                  <Badge variant="success" size="sm">
-                    Editing
-                  </Badge>
-                )}
-                {!canEdit && (
-                  <Badge variant="neutral" size="sm">
-                    Read-only
-                  </Badge>
-                )}
-                {hasUnsavedChanges && (
-                  <Badge variant="warning" size="sm">
-                    Unsaved
-                  </Badge>
-                )}
-              </div>
+      {showHeader && (
+        <div className="flex items-center justify-between p-3 sm:p-4 border-b border-secondary bg-secondary shadow-sm">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-blue-500" />
             </div>
-            <p className="text-xs text-tertiary font-mono truncate hidden sm:block">{filePath}</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-sm font-semibold text-primary truncate">
+                  {filePath.split('/').pop()}
+                </h3>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {isEditing && (
+                    <Badge variant="success" size="sm">
+                      Editing
+                    </Badge>
+                  )}
+                  {!canEdit && (
+                    <Badge variant="neutral" size="sm">
+                      Read-only
+                    </Badge>
+                  )}
+                  {hasUnsavedChanges && (
+                    <Badge variant="warning" size="sm">
+                      Unsaved
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-tertiary font-mono truncate hidden sm:block">{filePath}</p>
+            </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-          {isEditing ? (
-            <>
+          
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {isEditing ? (
+              <>
+                <Button
+                  onClick={handleSave}
+                  disabled={!hasUnsavedChanges || isSaving}
+                  loading={isSaving}
+                  variant="primary"
+                  size="sm"
+                  icon={!isSaving ? <Save className="w-4 h-4" /> : undefined}
+                >
+                  <span className="hidden sm:inline">Save</span>
+                </Button>
+                
+                <Button
+                  onClick={handleCancelEdit}
+                  variant="secondary"
+                  size="sm"
+                  icon={<X className="w-4 h-4" />}
+                >
+                  <span className="hidden sm:inline">Cancel</span>
+                </Button>
+              </>
+            ) : canEdit ? (
               <Button
-                onClick={handleSave}
-                disabled={!hasUnsavedChanges || isSaving}
-                loading={isSaving}
-                variant="primary"
-                size="sm"
-                icon={!isSaving ? <Save className="w-4 h-4" /> : undefined}
-              >
-                <span className="hidden sm:inline">Save</span>
-              </Button>
-              
-              <Button
-                onClick={handleCancelEdit}
+                onClick={handleEdit}
                 variant="secondary"
                 size="sm"
-                icon={<X className="w-4 h-4" />}
+                icon={<Edit3 className="w-4 h-4" />}
               >
-                <span className="hidden sm:inline">Cancel</span>
+                <span className="hidden sm:inline">Edit</span>
               </Button>
-            </>
-          ) : canEdit ? (
+            ) : (
+              <Badge variant="neutral" size="sm">
+                <span className="hidden sm:inline">View Only</span>
+                <span className="sm:hidden">RO</span>
+              </Badge>
+            )}
+            
             <Button
-              onClick={handleEdit}
-              variant="secondary"
+              onClick={handleCopyContent}
+              variant="ghost"
               size="sm"
-              icon={<Edit3 className="w-4 h-4" />}
+              icon={copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              className="hidden sm:flex"
             >
-              <span className="hidden sm:inline">Edit</span>
+              {copied ? 'Copied' : 'Copy'}
             </Button>
-          ) : (
-            <Badge variant="neutral" size="sm">
-              <span className="hidden sm:inline">View Only</span>
-              <span className="sm:hidden">RO</span>
-            </Badge>
-          )}
-          
-          <Button
-            onClick={handleCopyContent}
-            variant="ghost"
-            size="sm"
-            icon={copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-            className="hidden sm:flex"
-          >
-            {copied ? 'Copied' : 'Copy'}
-          </Button>
-          
-          <Button
-            onClick={handleDownload}
-            variant="ghost"
-            size="sm"
-            icon={<Download className="w-4 h-4" />}
-            className="hidden sm:flex"
-          >
-            Download
-          </Button>
+            
+            <Button
+              onClick={handleDownload}
+              variant="ghost"
+              size="sm"
+              icon={<Download className="w-4 h-4" />}
+              className="hidden sm:flex"
+            >
+              Download
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
-      <div className="flex-1">
+      <div className="flex-1 min-h-0">
         <CodeEditor
           value={isEditing ? editedContent : fileContent}
           onChange={isEditing ? setEditedContent : () => {}}
@@ -278,28 +282,30 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath }) => {
       </div>
       
       {/* Footer */}
-      <div className="px-3 sm:px-4 py-2 border-t border-secondary bg-secondary/50">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 sm:gap-4">
-            <span className="text-tertiary">
-              {fileContent.split('\n').length} lines
-            </span>
-            <span className="text-tertiary hidden sm:inline">
-              {fileContent.length} characters
-            </span>
-          </div>
-          <div className="flex items-center gap-1 sm:gap-2">
-            <Badge variant="neutral" size="sm">
-              {language}
-            </Badge>
-            {!canEdit && (
-              <Badge variant="neutral" size="sm" className="hidden sm:flex">
-                Read-only
+      {showFooter && (
+        <div className="px-3 sm:px-4 py-2 border-t border-secondary bg-secondary/50 flex-shrink-0">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 sm:gap-4">
+              <span className="text-tertiary">
+                {fileContent.split('\n').length} lines
+              </span>
+              <span className="text-tertiary hidden sm:inline">
+                {fileContent.length} characters
+              </span>
+            </div>
+            <div className="flex items-center gap-1 sm:gap-2">
+              <Badge variant="neutral" size="sm">
+                {language}
               </Badge>
-            )}
+              {!canEdit && (
+                <Badge variant="neutral" size="sm" className="hidden sm:flex">
+                  Read-only
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

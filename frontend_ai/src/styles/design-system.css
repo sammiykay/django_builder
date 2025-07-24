@@ -523,3 +523,43 @@ body {
     --text-secondary: #ffffff;
   }
 }
+
+/* ============================================
+   PARTICLE SYSTEM ANIMATIONS
+   ============================================ */
+
+/* Blob animation for profile page orbs */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+  25% {
+    transform: translate(30px, -50px) scale(1.1);
+    border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%;
+  }
+  50% {
+    transform: translate(-20px, 20px) scale(0.9);
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+  75% {
+    transform: translate(-30px, -30px) scale(1.05);
+    border-radius: 40% 60% 40% 60% / 30% 70% 60% 40%;
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}

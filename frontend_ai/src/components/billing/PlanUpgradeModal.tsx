@@ -19,26 +19,7 @@ import {
   CreditCard 
 } from 'lucide-react';
 import { api } from '../../services/api';
-
-interface BillingPlan {
-  id: number;
-  name: string;
-  description: string;
-  plan_type: 'free' | 'paid' | 'enterprise';
-  token_limit: number;
-  price: string;
-  billing_interval: 'monthly' | 'yearly' | 'one_time';
-  max_projects: number;
-  max_concurrent_containers: number;
-  advanced_features: Record<string, any>;
-  is_free: boolean;
-}
-
-interface UserSubscription {
-  id: number;
-  plan: BillingPlan;
-  status: string;
-}
+import { BillingPlan, UserSubscription } from '../../types/api';
 
 interface PlanUpgradeModalProps {
   isOpen: boolean;
@@ -101,33 +82,52 @@ export const PlanUpgradeModal: React.FC<PlanUpgradeModalProps> = ({
       `${plan.max_concurrent_containers} concurrent container${plan.max_concurrent_containers > 1 ? 's' : ''}`,
     ];
 
-    // Add advanced features
-    if (plan.advanced_features) {
-      if (plan.advanced_features.priority_support) {
-        features.push('Priority support');
-      }
-      if (plan.advanced_features.advanced_analytics) {
-        features.push('Advanced analytics');
-      }
-      if (plan.advanced_features.api_access) {
-        features.push('API access');
-      }
-      if (plan.advanced_features.custom_templates) {
-        features.push('Custom templates');
-      }
-      if (plan.advanced_features.team_collaboration) {
-        features.push('Team collaboration');
-      }
+    // Add boolean feature flags
+    if (plan.enable_ai_chat) {
+      features.push('AI Chat');
+    }
+    if (plan.enable_auto_error_fix) {
+      features.push('Auto Error Fix');
+    }
+    if (plan.enable_advanced_templates) {
+      features.push('Advanced Templates');
+    }
+    if (plan.enable_custom_containers) {
+      features.push('Custom Containers');
+    }
+    if (plan.enable_code_export) {
+      features.push('Code Export');
+    }
+    if (plan.enable_version_control) {
+      features.push('Version Control');
+    }
+    if (plan.enable_collaboration) {
+      features.push('Team Collaboration');
+    }
+    if (plan.enable_analytics) {
+      features.push('Advanced Analytics');
+    }
+    if (plan.enable_priority_support) {
+      features.push('Priority Support');
+    }
+    if (plan.enable_custom_models) {
+      features.push('Custom AI Models');
+    }
+    if (plan.enable_api_access) {
+      features.push('API Access');
+    }
+    if (plan.enable_white_labeling) {
+      features.push('White Labeling');
     }
 
     return features;
   };
 
   const isUpgrade = (plan: BillingPlan) => {
-    if (currentSubscription.plan.is_free && !plan.is_free) {
+    if (currentSubscription.plan.plan_type === 'free' && plan.plan_type !== 'free') {
       return true;
     }
-    return parseFloat(plan.price) > parseFloat(currentSubscription.plan.price);
+    return parseFloat(plan.price.replace('$', '')) > parseFloat(currentSubscription.plan.price.replace('$', ''));
   };
 
   const isCurrentPlan = (plan: BillingPlan) => {
@@ -188,9 +188,9 @@ export const PlanUpgradeModal: React.FC<PlanUpgradeModalProps> = ({
 
                   <div className="mb-4">
                     <div className="text-3xl font-bold">
-                      {plan.is_free ? 'Free' : `$${plan.price}`}
+                      {plan.price}
                     </div>
-                    {!plan.is_free && (
+                    {plan.plan_type !== 'free' && (
                       <div className="text-sm text-muted-foreground">
                         per {plan.billing_interval}
                       </div>

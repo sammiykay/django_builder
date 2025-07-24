@@ -121,14 +121,14 @@ class ProjectAdmin(admin.ModelAdmin):
     def view_chat_link(self, obj):
         if hasattr(obj, 'chat_thread') and obj.chat_thread:
             # Assuming 'main' is your app name for reversing
-            url = reverse('admin:main_chatthread_change', args=[obj.chat_thread.pk])
+            url = reverse('admin:ai_builder_chatthread_change', args=[obj.chat_thread.pk])
             return format_html('<a href="{}">View Chat</a>', url)
         return "No Chat"
     view_chat_link.short_description = 'Chat'
 
     def view_files_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_projectfile_changelist') + f'?project__id__exact={obj.pk}'
+        url = reverse('admin:ai_builder_projectfile_changelist') + f'?project__id__exact={obj.pk}'
         return format_html('<a href="{}">View Files ({})</a>', url, obj.files.count())
     view_files_link.short_description = 'Files'
 
@@ -167,7 +167,7 @@ class ProjectFileAdmin(admin.ModelAdmin):
 
     def project_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_project_change', args=[obj.project.pk])
+        url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
         return format_html('<a href="{}">{}</a>', url, obj.project.name)
     project_link.short_description = 'Project'
 
@@ -191,7 +191,7 @@ class ChatThreadAdmin(admin.ModelAdmin):
 
     def project_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_project_change', args=[obj.project.pk])
+        url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
         return format_html('<a href="{}">{}</a>', url, obj.project.name)
     project_link.short_description = 'Project'
 
@@ -235,7 +235,7 @@ class ChatMessageAdmin(admin.ModelAdmin):
 
     def project_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_project_change', args=[obj.project.pk])
+        url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
         return format_html('<a href="{}">{}</a>', url, obj.project.name)
     project_link.short_description = 'Project'
 
@@ -261,7 +261,7 @@ class CommandExecutionAdmin(admin.ModelAdmin):
 
     def project_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_project_change', args=[obj.project.pk])
+        url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
         return format_html('<a href="{}">{}</a>', url, obj.project.name)
     project_link.short_description = 'Project'
 
@@ -295,7 +295,7 @@ class ProjectSessionAdmin(admin.ModelAdmin):
 
     def project_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_project_change', args=[obj.project.pk])
+        url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
         return format_html('<a href="{}">{}</a>', url, obj.project.name)
     project_link.short_description = 'Project'
 
@@ -380,7 +380,7 @@ class ErrorLogAdmin(admin.ModelAdmin):
 
     def project_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_project_change', args=[obj.project.pk])
+        url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
         return format_html('<a href="{}">{}</a>', url, obj.project.name)
     project_link.short_description = 'Project'
 
@@ -426,7 +426,7 @@ class UsageAnalyticsAdmin(admin.ModelAdmin):
     def project_link(self, obj):
         if obj.project:
             # Assuming 'main' is your app name for reversing
-            url = reverse('admin:main_project_change', args=[obj.project.pk])
+            url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
             return format_html('<a href="{}">{}</a>', url, obj.project.name)
         return "N/A"
     project_link.short_description = 'Project'
@@ -458,8 +458,18 @@ class BillingPlanAdmin(admin.ModelAdmin):
         ('Pricing', {
             'fields': ('price', 'billing_interval')
         }),
-        ('Features & Settings', {
-            'fields': ('advanced_features', 'is_active', 'is_default_free', 'sort_order')
+        ('Advanced Features', {
+            'fields': (
+                ('enable_ai_chat', 'enable_auto_error_fix'),
+                ('enable_advanced_templates', 'enable_custom_containers'),
+                ('enable_code_export', 'enable_version_control'),
+                ('enable_collaboration', 'enable_analytics'),
+                ('enable_priority_support', 'enable_custom_models'),
+                ('enable_api_access', 'enable_white_labeling')
+            )
+        }),
+        ('Plan Settings', {
+            'fields': ('is_active', 'is_default_free', 'sort_order')
         }),
     )
 
@@ -503,7 +513,7 @@ class UserSubscriptionAdmin(admin.ModelAdmin):
 
     def plan_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_billingplan_change', args=[obj.plan.pk])
+        url = reverse('admin:ai_builder_billingplan_change', args=[obj.plan.pk])
         return format_html('<a href="{}">{}</a>', url, obj.plan.name)
     plan_link.short_description = 'Plan'
 
@@ -563,7 +573,7 @@ class TokenUsageAdmin(admin.ModelAdmin):
     def project_link(self, obj):
         if obj.project:
             # Assuming 'main' is your app name for reversing
-            url = reverse('admin:main_project_change', args=[obj.project.pk])
+            url = reverse('admin:ai_builder_project_change', args=[obj.project.pk])
             return format_html('<a href="{}">{}</a>', url, obj.project.name)
         return "N/A"
     project_link.short_description = 'Project'
@@ -618,7 +628,7 @@ class BillingInvoiceAdmin(admin.ModelAdmin):
 
     def subscription_link(self, obj):
         # Assuming 'main' is your app name for reversing
-        url = reverse('admin:main_usersubscription_change', args=[obj.subscription.pk])
+        url = reverse('admin:ai_builder_usersubscription_change', args=[obj.subscription.pk])
         return format_html('<a href="{}">{}</a>', url, obj.subscription.plan.name)
     subscription_link.short_description = 'Subscription Plan'
 

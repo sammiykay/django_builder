@@ -61,8 +61,8 @@ def toggle_task_status(request, pk):
             'status': 'success',
             'completed': task.completed
         })
+        
     return JsonResponse({'status': 'error'}, status=400)
-
 @login_required
 def dashboard(request):
     context = {

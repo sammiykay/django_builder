@@ -462,7 +462,20 @@ class BillingPlan(models.Model):
     # Features
     max_projects = models.IntegerField(default=10, help_text="Maximum number of projects (0 = unlimited)")
     max_concurrent_containers = models.IntegerField(default=1)
-    advanced_features = models.JSONField(default=dict, help_text="Advanced features enabled")
+    
+    # Advanced Features (Boolean fields for easy selection)
+    enable_ai_chat = models.BooleanField(default=True, help_text="Enable AI chat functionality")
+    enable_auto_error_fix = models.BooleanField(default=False, help_text="Enable automatic error fixing")
+    enable_advanced_templates = models.BooleanField(default=False, help_text="Access to advanced project templates")
+    enable_custom_containers = models.BooleanField(default=False, help_text="Use custom Docker configurations")
+    enable_code_export = models.BooleanField(default=True, help_text="Export generated code")
+    enable_version_control = models.BooleanField(default=False, help_text="Git integration and version control")
+    enable_collaboration = models.BooleanField(default=False, help_text="Team collaboration features")
+    enable_analytics = models.BooleanField(default=False, help_text="Advanced usage analytics")
+    enable_priority_support = models.BooleanField(default=False, help_text="Priority customer support")
+    enable_custom_models = models.BooleanField(default=False, help_text="Access to different AI models")
+    enable_api_access = models.BooleanField(default=False, help_text="API access for external integrations")
+    enable_white_labeling = models.BooleanField(default=False, help_text="White-label customization")
     
     # Plan settings
     is_active = models.BooleanField(default=True)

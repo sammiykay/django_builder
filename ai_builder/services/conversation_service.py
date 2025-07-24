@@ -170,7 +170,7 @@ class ConversationService:
         try:
             # Get error analysis from Claude
             analysis_response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=2000,
                 temperature=0.1,
                 messages=[{"role": "user", "content": error_analysis_prompt}]
@@ -227,7 +227,7 @@ class ConversationService:
         try:
             # Get response from Claude
             response = self.claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=2000,
                 temperature=0.2,
                 messages=[{"role": "user", "content": general_prompt}]

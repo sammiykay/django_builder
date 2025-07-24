@@ -1167,7 +1167,7 @@ Provide helpful assistance for this Django project.
         
         try:
             response = claude_service.client.messages.create(
-                model="claude-3-7-sonnet-20250219",
+                model="claude-opus-4-20250514",
                 max_tokens=1500,
                 temperature=0.1,
                 messages=[{"role": "user", "content": context_prompt}]

@@ -5,28 +5,42 @@ import {
   Terminal as TerminalIcon, 
   Play, 
   Square, 
-  Settings,
   ArrowLeft,
   Loader2,
   AlertCircle,
   ExternalLink,
-  Globe
+  Globe,
+  Activity,
+  Clock,
+  Users,
+  Code,
+  Server,
+  Zap,
+  Eye,
+  Settings,
+  MoreHorizontal,
+  Minimize2,
+  Maximize2,
+  LogOut,
+  User,
+  Home
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import ChatWithFiles from '../components/project/ChatWithFiles';
 import Terminal from '../components/project/Terminal';
-import AppLayout from '../components/layout/AppLayout';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Card from '../components/ui/Card';
 import { apiService } from '../services/api';
 import { Project } from '../types/api';
+import { useAuth } from '../contexts/AuthContext';
 import '../styles/design-system.css';
 
 const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'chat');
   const [project, setProject] = useState<Project | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,6 +49,8 @@ const ProjectDetail: React.FC = () => {
   const [isStopping, setIsStopping] = useState(false);
   const [terminalActivity, setTerminalActivity] = useState<string>('');
   const [hasNewTerminalActivity, setHasNewTerminalActivity] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [sessionStartTime] = useState(new Date());
 
   useEffect(() => {
     if (id) {
@@ -42,10 +58,8 @@ const ProjectDetail: React.FC = () => {
     }
   }, [id]);
 
-
   // Handle tab change and URL sync
   const handleTabChange = (tabId: string) => {
-    console.log('Changing tab to:', tabId);
     setActiveTab(tabId);
     setSearchParams({ tab: tabId }, { replace: true });
   };
@@ -54,10 +68,9 @@ const ProjectDetail: React.FC = () => {
   useEffect(() => {
     const urlTab = searchParams.get('tab');
     if (urlTab && ['chat', 'terminal'].includes(urlTab) && urlTab !== activeTab) {
-      console.log('Setting tab from URL:', urlTab);
       setActiveTab(urlTab);
     }
-  }, []); // Only run on mount
+  }, []);
 
   // Listen for terminal activity updates
   useEffect(() => {
@@ -65,7 +78,6 @@ const ProjectDetail: React.FC = () => {
       const { output, type } = event.detail;
       setTerminalActivity(output);
       
-      // Only show notification if not on terminal tab
       if (activeTab !== 'terminal') {
         setHasNewTerminalActivity(true);
       }
@@ -89,7 +101,6 @@ const ProjectDetail: React.FC = () => {
   useEffect(() => {
     const autostart = searchParams.get('autostart');
     if (autostart === 'true' && project) {
-      // Send a welcome message to trigger streaming
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('project-autostart', {
           detail: { 
@@ -97,11 +108,10 @@ const ProjectDetail: React.FC = () => {
             message: `🎉 Welcome to your new project "${project.name}"! Let me help you get started. What features would you like me to add first?`
           }
         }));
-        // Remove autostart from URL
         setSearchParams({ tab: activeTab }, { replace: true });
       }, 2000);
     }
-  }, [project]); // Only depend on project
+  }, [project]);
 
   const loadProject = async () => {
     if (!id) return;
@@ -122,11 +132,8 @@ const ProjectDetail: React.FC = () => {
     if (!project) return;
     
     setIsStarting(true);
-    
-    // Switch to terminal tab to show live streaming
     handleTabChange('terminal');
     
-    // Notify terminal about the status change
     window.dispatchEvent(new CustomEvent('project-container-start', {
       detail: { projectId: project.id }
     }));
@@ -135,7 +142,6 @@ const ProjectDetail: React.FC = () => {
       const response = await apiService.startContainer(project.id);
       
       if (response.status === 'starting') {
-        // Listen for WebSocket container status updates instead of polling
         const handleContainerStatusUpdate = (event: CustomEvent) => {
           const { status, isRunning, port, containerId } = event.detail;
           
@@ -155,7 +161,6 @@ const ProjectDetail: React.FC = () => {
         
         window.addEventListener('container-status-update', handleContainerStatusUpdate as EventListener);
       } else {
-        // Immediate response
         setProject(prev => prev ? {
           ...prev,
           is_running: true,
@@ -173,7 +178,6 @@ const ProjectDetail: React.FC = () => {
   const handleStopContainer = async () => {
     if (!project) return;
     
-    // Notify terminal about the stop action
     window.dispatchEvent(new CustomEvent('project-container-stop', {
       detail: { projectId: project.id }
     }));
@@ -193,13 +197,7 @@ const ProjectDetail: React.FC = () => {
     }
   };
 
-  const handleGenerationComplete = () => {
-    // Reload project data after generation
-    loadProject();
-  };
-
   const handleContainerStatusChange = (isRunning: boolean) => {
-    // Update project state when terminal changes container status
     setProject(prev => prev ? {
       ...prev,
       is_running: isRunning,
@@ -207,147 +205,137 @@ const ProjectDetail: React.FC = () => {
     } : null);
   };
 
+  const getSessionDuration = () => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - sessionStartTime.getTime()) / (1000 * 60));
+    return `${diff}m`;
+  };
+
   const tabs = [
-    { id: 'chat', label: 'Chat', icon: MessageSquare },
-    { id: 'terminal', label: 'Terminal', icon: TerminalIcon }
+    { 
+      id: 'chat', 
+      label: 'AI Workspace', 
+      icon: MessageSquare,
+      description: 'Chat with AI to build your project'
+    },
+    { 
+      id: 'terminal', 
+      label: 'Terminal', 
+      icon: TerminalIcon,
+      description: 'Run commands and manage your application'
+    }
   ];
 
+  // Loading State
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-primary flex items-center justify-center">
-        <Card className="text-center max-w-md mx-auto">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <div>
-              <h3 className="text-lg font-semibold text-primary mb-1">Loading Project</h3>
-              <p className="text-secondary">Please wait while we fetch your project details...</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="relative">
+            <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-800 rounded-full animate-spin">
+              <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
             </div>
           </div>
-        </Card>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">Loading Project</h3>
+          <p className="mt-2 text-gray-600 dark:text-gray-400">Getting your workspace ready...</p>
+        </div>
       </div>
     );
   }
 
+  // Error State
   if (error && !project) {
     return (
-      <div className="min-h-screen bg-primary flex items-center justify-center p-4">
-        <Card className="text-center max-w-md mx-auto">
-          <div className="flex flex-col items-center gap-4">
-            <AlertCircle className="w-12 h-12 text-red-500" />
-            <div>
-              <h2 className="text-xl font-semibold text-primary mb-2">Failed to Load Project</h2>
-              <p className="text-secondary mb-6">{error}</p>
-            </div>
-            <div className="flex gap-3">
-              <Button onClick={loadProject} variant="primary">
-                Retry
-              </Button>
-              <Button onClick={() => navigate('/dashboard')} variant="secondary">
-                Back to Dashboard
-              </Button>
-            </div>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-red-500" />
           </div>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!project) {
-    return (
-      <div className="min-h-screen bg-primary flex items-center justify-center p-4">
-        <Card className="text-center max-w-md mx-auto">
-          <div className="flex flex-col items-center gap-4">
-            <AlertCircle className="w-12 h-12 text-yellow-500" />
-            <div>
-              <h2 className="text-xl font-semibold text-primary mb-2">Project Not Found</h2>
-              <p className="text-secondary mb-6">The project you're looking for doesn't exist or may have been deleted.</p>
-            </div>
-            <Button onClick={() => navigate('/dashboard')} variant="primary">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Failed to Load Project</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={loadProject} variant="primary">
+              Try Again
+            </Button>
+            <Button onClick={() => navigate('/dashboard')} variant="secondary">
               Back to Dashboard
             </Button>
           </div>
-        </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Not Found State
+  if (!project) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
+          <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-yellow-500" />
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Project Not Found</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">The project you're looking for doesn't exist or may have been deleted.</p>
+          <Button onClick={() => navigate('/dashboard')} variant="primary">
+            Back to Dashboard
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <AppLayout>
-      <div className="bg-primary text-primary">
-        {/* Project Header */}
-        <div className="bg-secondary border-b border-secondary">
-          <div className="px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex items-center justify-between">
-              {/* Left Section - Project Info */}
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => navigate('/dashboard')}
-                  icon={<ArrowLeft className="w-4 h-4" />}
-                  className="text-secondary hover:text-primary flex-shrink-0"
-                >
-                  <span className="hidden sm:inline">Back</span>
-                </Button>
-                
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-xl sm:text-2xl font-bold text-primary leading-tight truncate">
-                    {project.name}
-                  </h1>
-                  <div className="flex items-center gap-3 mt-2">
-                    <Badge 
-                      variant={project.is_running ? 'success' : 'neutral'}
-                      size="sm"
-                    >
-                      {project.is_running ? '🟢 Running' : '⭕ Stopped'}
-                    </Badge>
-                    {project.container_port && (
-                      <span className="text-sm text-tertiary hidden sm:inline">
-                        Port {project.container_port}
-                      </span>
-                    )}
-                    {error && (
-                      <Badge variant="error" size="sm" className="hidden sm:flex">
-                        {error}
-                      </Badge>
-                    )}
-                  </div>
+    <div className={`h-screen flex flex-col bg-gray-50 dark:bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+        {/* Unified Header */}
+        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            {/* Left Section - Brand & Navigation */}
+            <div className="flex items-center space-x-4 min-w-0">
+              {/* Brand */}
+              <button 
+                onClick={() => navigate('/dashboard')}
+                className="group flex items-center space-x-2 text-gray-900 dark:text-gray-100 hover:opacity-80 transition-opacity"
+              >
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <Code className="w-4 h-4 text-white" />
                 </div>
+                <div className="hidden md:block">
+                  <div className="text-sm font-bold">Django AI Builder</div>
+                </div>
+              </button>
+
+              {/* Breadcrumb */}
+              <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+                <ArrowLeft className="w-3 h-3" />
+                <button 
+                  onClick={() => navigate('/dashboard')}
+                  className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                >
+                  Dashboard
+                </button>
+                <span>/</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100 max-w-32 truncate">
+                  {project.name}
+                </span>
               </div>
 
-              {/* Right Section - Actions */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {project.is_running && project.container_port && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => window.open(`http://localhost:${project.container_port}`, '_blank')}
-                    icon={<ExternalLink className="w-4 h-4" />}
-                  >
-                    <span className="hidden sm:inline">View App</span>
-                  </Button>
+              {/* Project Status */}
+              <div className="flex items-center space-x-2">
+                <div className={`w-2 h-2 rounded-full ${project.is_running ? 'bg-green-500' : 'bg-gray-400'}`} />
+                <span className={`text-sm font-medium ${project.is_running ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                  {project.is_running ? 'Running' : 'Stopped'}
+                </span>
+                {project.container_port && (
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    :{project.container_port}
+                  </span>
                 )}
-
-                <Button
-                  variant={project.is_running ? 'danger' : 'primary'}
-                  size="sm"
-                  onClick={project.is_running ? handleStopContainer : handleStartContainer}
-                  loading={isStarting || isStopping}
-                  icon={
-                    isStarting || isStopping ? undefined :
-                    project.is_running ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4" />
-                  }
-                >
-                  {isStarting ? 'Starting...' : 
-                   isStopping ? 'Stopping...' : 
-                   project.is_running ? 'Stop' : 'Start'}
-                </Button>
               </div>
             </div>
 
-            {/* Tab Navigation */}
-            <div className="mt-6 border-t border-primary/10 pt-4">
-              <nav className="flex gap-2">
+            {/* Center Section - Tabs */}
+            <div className="flex items-center">
+              <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
@@ -356,80 +344,213 @@ const ProjectDetail: React.FC = () => {
                     <button
                       key={tab.id}
                       onClick={() => handleTabChange(tab.id)}
-                      className={`
-                        flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all relative
-                        ${isActive 
-                          ? 'bg-primary text-primary shadow-sm border border-primary/20' 
-                          : 'text-secondary hover:text-primary hover:bg-tertiary/30'
-                        }
-                      `}
+                      className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-md font-medium text-sm transition-all duration-200 ${
+                        isActive 
+                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm' 
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                      }`}
+                      title={tab.description}
                     >
                       <Icon className="w-4 h-4" />
-                      <span>{tab.label}</span>
-                      {/* Activity indicator for terminal tab */}
+                      <span className="hidden sm:inline">{tab.label}</span>
+                      
+                      {/* Activity indicator for terminal */}
                       {tab.id === 'terminal' && hasNewTerminalActivity && !isActive && (
-                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse">
-                          <div className="absolute inset-0 w-3 h-3 bg-green-400 rounded-full animate-ping"></div>
-                        </div>
+                        <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                       )}
                     </button>
                   );
                 })}
-              </nav>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* Content Area */}
-        <main className="h-[calc(100vh-12rem)] relative">
-          {console.log('Current activeTab:', activeTab)}
-          {activeTab === 'chat' && (
-            <div className="h-full">
-              <ChatWithFiles projectId={project.id} />
-              
-              {/* Mini Terminal Preview - Show when there's activity and not on terminal tab */}
-              {terminalActivity && hasNewTerminalActivity && (
-                <div className="absolute bottom-4 right-4 w-96 max-w-[calc(100vw-2rem)] bg-gray-900 border border-gray-600 rounded-lg shadow-2xl z-50">
-                  <div className="bg-gray-800 px-3 py-2 rounded-t-lg flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <TerminalIcon className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-white font-medium">Terminal Activity</span>
-                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            {/* Right Section - Actions & User Menu */}
+            <div className="flex items-center space-x-2 flex-shrink-0">
+              {/* Project Actions */}
+              {project.is_running && project.container_port && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.open(`http://localhost:${project.container_port}`, '_blank')}
+                  className="hidden sm:flex text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                  title="View Application"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
+              )}
+
+              <button
+                onClick={project.is_running ? handleStopContainer : handleStartContainer}
+                disabled={isStarting || isStopping}
+                className={`group relative flex items-center space-x-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all duration-300 min-w-[90px] justify-center overflow-hidden ${
+                  project.is_running
+                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg hover:shadow-red-500/25 disabled:bg-red-400'
+                    : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white shadow-lg hover:shadow-green-500/25 disabled:from-gray-400 disabled:to-gray-500'
+                } disabled:cursor-not-allowed transform hover:scale-105 disabled:hover:scale-100 active:scale-95`}
+                title={
+                  isStarting ? 'Starting container...' :
+                  isStopping ? 'Stopping container...' :
+                  project.is_running ? 'Stop container' : 'Start container'
+                }
+              >
+                {/* Background Animation */}
+                <div className={`absolute inset-0 transition-opacity duration-300 ${
+                  isStarting || isStopping ? 'opacity-100' : 'opacity-0'
+                }`}>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+                </div>
+                
+                {/* Content */}
+                <div className="relative z-10 flex items-center space-x-2">
+                  {isStarting ? (
+                    <>
+                      <div className="relative">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <div className="absolute inset-0 w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.8s' }} />
+                      </div>
+                      <span className="hidden sm:inline">Starting...</span>
+                    </>
+                  ) : isStopping ? (
+                    <>
+                      <div className="relative">
+                        <Loader2 className="w-4 h-4 animate-spin text-red-200" />
+                        <div className="absolute inset-0 w-4 h-4 border-2 border-red-300/50 border-t-white rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.2s' }} />
+                      </div>
+                      <span className="hidden sm:inline">Stopping...</span>
+                    </>
+                  ) : project.is_running ? (
+                    <>
+                      <Square className="w-4 h-4 group-hover:animate-pulse" />
+                      <span className="hidden sm:inline">Stop</span>
+                      
+                      {/* Pulse effect for stop */}
+                      <div className="absolute inset-0 bg-red-400 rounded-lg opacity-0 group-hover:opacity-20 group-hover:animate-ping" />
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 group-hover:scale-110 transition-transform duration-200" />
+                      <span className="hidden sm:inline">Start</span>
+                      
+                      {/* Shimmer effect for start */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                    </>
+                  )}
+                </div>
+                
+                {/* Status indicator dot */}
+                <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full transition-all duration-300 ${
+                  project.is_running ? 'bg-green-400 animate-pulse' : 'bg-gray-400'
+                }`}>
+                  {project.is_running && (
+                    <div className="absolute inset-0 w-3 h-3 bg-green-400 rounded-full animate-ping opacity-40" />
+                  )}
+                </div>
+              </button>
+
+              {/* Divider */}
+              <div className="w-px h-6 bg-gray-200 dark:bg-gray-600 mx-1" />
+
+              {/* User Menu */}
+              {user && (
+                <div className="flex items-center space-x-2">
+                  <div className="hidden sm:flex items-center space-x-2">
+                    <div className="w-7 h-7 bg-gradient-to-br from-gray-600 to-gray-700 rounded-full flex items-center justify-center">
+                      <User className="w-3 h-3 text-white" />
                     </div>
-                    <div className="flex items-center space-x-1">
-                      <button
-                        onClick={() => handleTabChange('terminal')}
-                        className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                      >
-                        Open Terminal
-                      </button>
-                      <button
-                        onClick={() => setHasNewTerminalActivity(false)}
-                        className="p-1 text-gray-400 hover:text-white transition-colors"
-                      >
-                        ✕
-                      </button>
-                    </div>
+                    <span className="text-sm text-gray-700 dark:text-gray-300 max-w-20 truncate">
+                      {user.first_name || user.username}
+                    </span>
                   </div>
-                  <div className="p-3 font-mono text-xs text-gray-300 bg-black max-h-32 overflow-y-auto">
-                    <div className="whitespace-pre-wrap">
-                      {terminalActivity.split('\n').slice(-10).join('\n')}
-                    </div>
-                  </div>
+                  
+                  <button
+                    onClick={logout}
+                    className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                    title="Logout"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
                 </div>
               )}
+
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                title="Toggle Fullscreen"
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Enhanced Content Area */}
+        <main className="flex-1 overflow-hidden relative">
+          {error && (
+            <div className="absolute top-0 left-0 right-0 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800 px-6 py-3 z-10">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-red-500" />
+                <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-auto text-red-500 hover:text-red-700 dark:hover:text-red-300"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           )}
-          {activeTab === 'terminal' && (
-            <Terminal 
-              projectId={project.id} 
-              isProjectRunning={project.is_running}
-              onContainerStatusChange={handleContainerStatusChange}
-            />
-          )}
+
+          <div className={`h-full ${error ? 'pt-12' : ''}`}>
+            {activeTab === 'chat' && (
+              <div className="h-full relative">
+                <ChatWithFiles projectId={project.id} />
+                
+                {/* Enhanced Mini Terminal Preview */}
+                {terminalActivity && hasNewTerminalActivity && (
+                  <div className="absolute bottom-6 right-6 w-96 max-w-[calc(100vw-3rem)] bg-gray-900 dark:bg-gray-800 border border-gray-700 dark:border-gray-600 rounded-xl shadow-2xl z-50 overflow-hidden">
+                    <div className="bg-gray-800 dark:bg-gray-700 px-4 py-3 flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                        <TerminalIcon className="w-4 h-4 text-green-400" />
+                        <span className="text-sm text-white dark:text-gray-200 font-medium">Terminal Activity</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleTabChange('terminal')}
+                          className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                        >
+                          Open Terminal
+                        </button>
+                        <button
+                          onClick={() => setHasNewTerminalActivity(false)}
+                          className="p-1 text-gray-400 hover:text-white dark:hover:text-gray-200 transition-colors"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-4 font-mono text-xs text-gray-300 dark:text-gray-400 bg-black dark:bg-gray-900 max-h-32 overflow-y-auto">
+                      <div className="whitespace-pre-wrap">
+                        {terminalActivity.split('\n').slice(-10).join('\n')}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {activeTab === 'terminal' && (
+              <div className="h-full">
+                <Terminal 
+                  projectId={project.id} 
+                  isProjectRunning={project.is_running}
+                  onContainerStatusChange={handleContainerStatusChange}
+                />
+              </div>
+            )}
+          </div>
         </main>
       </div>
-    </AppLayout>
   );
 };
 
