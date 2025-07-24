@@ -18,3 +18,5 @@ django-cors-headers
 django-filter
 django-redis
 django-crispy-forms
+django-allauth
+requests
