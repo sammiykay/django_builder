@@ -13,6 +13,7 @@ import {
   Zap
 } from 'lucide-react';
 import { api } from '../../services/api';
+import PaymentHistory from './PaymentHistory';
 
 interface BillingPlan {
   id: number;
@@ -72,6 +73,18 @@ export const BillingDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
+  }, []);
+
+  // Listen for subscription updates (e.g. after payment completion)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'subscription_updated') {
+        fetchDashboardData();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const fetchDashboardData = async () => {
@@ -357,6 +370,9 @@ export const BillingDashboard: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Payment History */}
+      <PaymentHistory className="md:col-span-2" />
     </div>
   );
 };

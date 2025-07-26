@@ -5,7 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { SimpleBillingDashboard } from '../components/billing/SimpleBillingDashboard';
 import { TokenUsageChart } from '../components/billing/TokenUsageChart';
 import AdvancedFeatures from '../components/billing/AdvancedFeatures';
+import PaymentHistory from '../components/billing/PaymentHistory';
 import AppLayout from '../components/layout/AppLayout';
+import { apiService } from '../services/api';
 import { 
   CreditCard, 
   TrendingUp, 
@@ -33,11 +35,82 @@ interface Particle {
   color: string;
 }
 
+interface BillingPlan {
+  id: number;
+  name: string;
+  description: string;
+  plan_type: 'free' | 'paid' | 'enterprise';
+  price: string;
+  billing_interval: 'monthly' | 'yearly' | 'one_time';
+  token_limit: number;
+  bonus_tokens: number;
+  max_projects: number;
+  max_concurrent_containers: number;
+  enable_ai_chat: boolean;
+  enable_auto_error_fix: boolean;
+  enable_advanced_templates: boolean;
+  enable_custom_containers: boolean;
+  enable_code_export: boolean;
+  enable_version_control: boolean;
+  enable_collaboration: boolean;
+  enable_analytics: boolean;
+  enable_priority_support: boolean;
+  enable_custom_models: boolean;
+  enable_api_access: boolean;
+  enable_white_labeling: boolean;
+  is_active: boolean;
+  is_default_free: boolean;
+}
+
+interface UserSubscription {
+  id: number;
+  plan: BillingPlan;
+  status: 'active' | 'canceled' | 'expired' | 'suspended';
+  tokens_used_this_period: number;
+  tokens_remaining: number;
+  usage_percentage: number;
+  current_period_start: string;
+  current_period_end: string;
+  bonus_tokens_remaining: number;
+}
+
 export const BillingPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const particlesRef = useRef<Particle[]>([]);
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch subscription data
+  const fetchSubscription = async () => {
+    try {
+      setLoading(true);
+      const response = await apiService.getBillingDashboard();
+      setSubscription(response.subscription);
+    } catch (err) {
+      console.error('Failed to fetch subscription:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubscription();
+  }, []);
+
+  // Listen for subscription updates (e.g. after payment completion)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'subscription_updated') {
+        fetchSubscription();
+        localStorage.removeItem('subscription_updated');
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const handlePlanUpgrade = (planType: string) => {
     // TODO: Implement plan upgrade logic
@@ -249,8 +322,8 @@ export const BillingPage: React.FC = () => {
                           : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
                       }`}
                     >
-                      <History className="w-4 h-4" />
-                      <span className="hidden sm:inline">History</span>
+                      <Wallet className="w-4 h-4" />
+                      <span className="hidden sm:inline">Payments</span>
                     </button>
                     
                     <button
@@ -280,35 +353,15 @@ export const BillingPage: React.FC = () => {
               {activeTab === 'features' && (
                 <div className="space-y-8">
                   <div className="bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8">
-                    <AdvancedFeatures 
-                      plan={{
-                        id: 1,
-                        name: "Free Plan",
-                        description: "Basic features for getting started",
-                        plan_type: "free",
-                        price: "$0",
-                        billing_interval: "monthly",
-                        token_limit: 10000,
-                        bonus_tokens: 0,
-                        max_projects: 3,
-                        max_concurrent_containers: 1,
-                        enable_ai_chat: true,
-                        enable_auto_error_fix: false,
-                        enable_advanced_templates: false,
-                        enable_custom_containers: false,
-                        enable_code_export: true,
-                        enable_version_control: false,
-                        enable_collaboration: false,
-                        enable_analytics: false,
-                        enable_priority_support: false,
-                        enable_custom_models: false,
-                        enable_api_access: false,
-                        enable_white_labeling: false,
-                        is_active: true,
-                        is_default_free: true,
-                        sort_order: 1
-                      }}
-                    />
+                    {loading ? (
+                      <div className="flex items-center justify-center p-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                      </div>
+                    ) : (
+                      <AdvancedFeatures 
+                        plan={subscription?.plan || null}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -398,18 +451,12 @@ export const BillingPage: React.FC = () => {
                   <div className="bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8">
                     <div className="flex items-center space-x-3 mb-6">
                       <div className="p-2 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 rounded-lg backdrop-blur-sm border border-blue-500/30">
-                        <History className="w-6 h-6 text-blue-400" />
+                        <Wallet className="w-6 h-6 text-blue-400" />
                       </div>
-                      <h3 className="text-2xl font-bold text-white">Usage History</h3>
+                      <h3 className="text-2xl font-bold text-white">Payment History</h3>
                     </div>
-                    <div className="text-center py-12">
-                      <div className="p-4 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-2xl backdrop-blur-sm border border-blue-500/20 w-24 h-24 mx-auto mb-6 flex items-center justify-center">
-                        <History className="w-12 h-12 text-blue-400" />
-                      </div>
-                      <h4 className="text-xl font-semibold text-white mb-3">Usage history will be displayed here</h4>
-                      <p className="text-gray-400 max-w-md mx-auto">
-                        Detailed logs of all AI operations, token usage, and project interactions will appear in this section
-                      </p>
+                    <div className="space-y-6">
+                      <PaymentHistory />
                     </div>
                   </div>
                 </div>

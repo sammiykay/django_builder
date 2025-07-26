@@ -157,6 +157,12 @@ export const SimpleBillingDashboard: React.FC = () => {
     setSelectedPlan(null);
     // Refresh dashboard data after successful payment
     fetchDashboardData();
+    // Trigger subscription update for other components
+    localStorage.setItem('subscription_updated', Date.now().toString());
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'subscription_updated',
+      newValue: Date.now().toString()
+    }));
   };
 
   const handlePaymentClose = () => {

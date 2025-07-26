@@ -225,14 +225,22 @@ class NOWPaymentsService:
     
     def handle_webhook(self, payload: str, signature: str = None) -> Tuple[bool, str]:
         """
-        Handle NOWPayments IPN webhook
+        Handle NOWPayments IPN webhook with enhanced security and validation
         """
         try:
-            # Verify signature if provided
-            if signature and self.ipn_secret:
+            # Always verify signature if we have IPN secret configured
+            if self.ipn_secret:
+                if not signature:
+                    logger.warning("Webhook received without signature but IPN secret is configured")
+                    return False, "Missing signature"
+                    
                 if not self.verify_ipn_signature(payload, signature):
-                    logger.warning("Invalid IPN signature")
+                    logger.warning("Invalid IPN signature - possible security breach attempt")
                     return False, "Invalid signature"
+                    
+                logger.info("Webhook signature verified successfully")
+            else:
+                logger.warning("IPN secret not configured - webhook security is compromised")
             
             # Parse the webhook data
             webhook_data = json.loads(payload)
@@ -240,22 +248,33 @@ class NOWPaymentsService:
             payment_id = webhook_data.get('payment_id')
             payment_status = webhook_data.get('payment_status')
             order_id = webhook_data.get('order_id')
+            actually_paid = webhook_data.get('actually_paid')
+            outcome_hash = webhook_data.get('outcome_hash')
             
-            logger.info(f"Received IPN: Payment {payment_id}, Status: {payment_status}, Order: {order_id}")
+            logger.info(f"Received verified IPN: Payment {payment_id}, Status: {payment_status}, Order: {order_id}, Paid: {actually_paid}")
             
-            # Handle different payment statuses
+            # Validate required fields
+            if not payment_id or not payment_status:
+                logger.error("Webhook missing required fields: payment_id or payment_status")
+                return False, "Missing required fields"
+            
+            # Handle different payment statuses with enhanced logging
             if payment_status in ['finished', 'confirmed']:
-                logger.info(f"Payment {payment_id} confirmed for order {order_id}")
-                # TODO: Update payment status in database
+                logger.info(f"✅ Payment {payment_id} CONFIRMED for order {order_id} - Amount paid: {actually_paid}")
                 return True, "Payment confirmed"
-            elif payment_status in ['failed', 'expired']:
-                logger.info(f"Payment {payment_id} failed/expired for order {order_id}")
-                # TODO: Update payment status in database
+            elif payment_status in ['failed', 'expired', 'refunded']:
+                logger.info(f"❌ Payment {payment_id} FAILED/EXPIRED for order {order_id} - Status: {payment_status}")
                 return True, "Payment failed"
+            elif payment_status in ['waiting', 'confirming', 'sending']:
+                logger.info(f"⏳ Payment {payment_id} in progress for order {order_id} - Status: {payment_status}")
+                return True, "Payment in progress"
             else:
-                logger.info(f"Payment {payment_id} status: {payment_status}")
+                logger.info(f"⚠️  Payment {payment_id} unknown status: {payment_status} for order {order_id}")
                 return True, "Status updated"
                 
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in webhook payload: {str(e)}")
+            return False, "Invalid JSON"
         except Exception as e:
             logger.error(f"Error handling webhook: {str(e)}")
             return False, str(e)

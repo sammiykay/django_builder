@@ -17,8 +17,27 @@ from .services.nowpayments_service import NOWPaymentsService
 from .serializers import BillingPlanSerializer, PaymentMethodSerializer
 import uuid
 from django.conf import settings
+from django.urls import reverse
 
 logger = logging.getLogger(__name__)
+
+def get_webhook_url(request):
+    """
+    Generate consistent webhook URL using BACKEND_URL setting or request context
+    """
+    backend_url = getattr(settings, 'BACKEND_URL', None)
+    
+    if backend_url:
+        # Use configured BACKEND_URL (recommended for production)
+        webhook_path = reverse('ai_builder:nowpayments_webhook')
+        webhook_url = f"{backend_url.rstrip('/')}{webhook_path}"
+        logger.info(f"Using configured BACKEND_URL for webhook: {webhook_url}")
+    else:
+        # Fallback to request-based URL (development only)
+        webhook_url = request.build_absolute_uri('/api/payments/nowpayments/webhook/')
+        logger.warning(f"BACKEND_URL not configured, using request-based URL: {webhook_url}")
+    
+    return webhook_url
 
 
 @api_view(['GET'])
@@ -211,7 +230,7 @@ def create_crypto_invoice(request):
                 description=f"Subscription payment for {request.user.username}",
                 success_url=f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')}/billing/success",
                 cancel_url=f"{getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')}/billing/cancel",
-                ipn_callback_url=f"{request.build_absolute_uri('/api/payments/nowpayments/webhook/')}"
+                ipn_callback_url=get_webhook_url(request)
             )
             
             logger.info(f"NOWPayments invoice creation - Success: {success}, Result: {result}")
@@ -361,7 +380,7 @@ def create_crypto_payment(request):
                 pay_currency=pay_currency,
                 order_id=order_id,
                 description=f"Subscription payment for {request.user.username} - {plan.name}",
-                ipn_callback_url=f"{request.build_absolute_uri('/api/payments/nowpayments/webhook/')}"
+                ipn_callback_url=get_webhook_url(request)
             )
             
             if success:
@@ -453,34 +472,52 @@ def check_payment_status(request, reference):
             flutterwave_service = FlutterwaveService(payment.payment_method)
             success, result = flutterwave_service.get_payment_status(reference)
         elif payment.payment_method.is_crypto:
-            # Check crypto payment via NOWPayments
+            # Check crypto payment via NOWPayments with enhanced validation
             try:
                 nowpayments_service = NOWPaymentsService()
                 success, result = nowpayments_service.get_payment_status(payment.gateway_transaction_id)
                 
                 if success:
-                    # Update local payment status if changed
-                    payment_status = result.get('payment_status', 'waiting')
-                    if payment_status in ['finished', 'confirmed'] and payment.status == 'pending':
-                        payment.status = 'completed'
-                        payment.completed_at = timezone.now()
-                        payment.transaction_hash = result.get('outcome_hash', result.get('pay_hash', ''))
-                        payment.save()
-                    elif payment_status in ['failed', 'expired', 'refunded'] and payment.status == 'pending':
-                        payment.status = 'failed'
-                        payment.save()
+                    # Get payment status from NOWPayments API
+                    api_payment_status = result.get('payment_status', 'waiting')
                     
-                    # Return unified status format
+                    # CRITICAL: Only update if webhook hasn't already confirmed the payment
+                    # This prevents race conditions between API polling and webhook updates
+                    if not payment.webhook_received:
+                        logger.info(f"Updating payment {payment.reference} from API poll - status: {api_payment_status}")
+                        
+                        if api_payment_status in ['finished', 'confirmed'] and payment.status == 'pending':
+                            payment.status = 'completed'
+                            payment.completed_at = timezone.now()
+                            payment.transaction_hash = result.get('outcome_hash', result.get('pay_hash', ''))
+                            
+                            # Mark that this was updated via API, not webhook
+                            payment.gateway_response.update({'api_confirmation': True})
+                            payment.save()
+                            
+                            logger.info(f"✅ Payment {payment.reference} confirmed via API polling")
+                            
+                        elif api_payment_status in ['failed', 'expired', 'refunded'] and payment.status == 'pending':
+                            payment.status = 'failed' if api_payment_status != 'expired' else 'expired'
+                            payment.save()
+                            
+                            logger.info(f"❌ Payment {payment.reference} failed via API polling - status: {api_payment_status}")
+                    else:
+                        logger.info(f"Payment {payment.reference} already updated by webhook - using database status")
+                    
+                    # Return unified status format with enhanced data
                     result = {
                         'status': payment.status,
                         'amount': str(payment.amount_usd),
                         'currency': payment.currency,
                         'transaction_hash': payment.transaction_hash,
                         'completed_at': payment.completed_at.isoformat() if payment.completed_at else None,
-                        'payment_status': payment_status,
+                        'payment_status': api_payment_status,
                         'actually_paid': result.get('actually_paid'),
                         'pay_address': result.get('pay_address'),
-                        'is_expired': payment_status in ['expired', 'failed']
+                        'is_expired': api_payment_status in ['expired', 'failed'],
+                        'webhook_received': payment.webhook_received,
+                        'confirmation_source': 'webhook' if payment.webhook_received else 'api_poll'
                     }
             except ValueError as ve:
                 return Response({
@@ -607,6 +644,42 @@ def cancel_payment(request, reference):
         return Response({
             'success': False,
             'error': 'Payment cancellation error',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([])
+def test_webhook_config(request):
+    """
+    Test webhook URL configuration and accessibility
+    """
+    try:
+        webhook_url = get_webhook_url(request)
+        
+        # Test URL accessibility
+        import requests
+        try:
+            # Quick ping test to see if the webhook endpoint is reachable
+            response = requests.get(webhook_url.replace('/webhook/', '/methods/'), timeout=5)
+            url_accessible = response.status_code < 500
+        except:
+            url_accessible = False
+        
+        return Response({
+            'success': True,
+            'webhook_url': webhook_url,
+            'backend_url_configured': bool(getattr(settings, 'BACKEND_URL', None)),
+            'backend_url': getattr(settings, 'BACKEND_URL', 'Not configured'),
+            'url_accessible': url_accessible,
+            'nowpayments_configured': bool(getattr(settings, 'NOWPAYMENTS_API_KEY', None)),
+            'ipn_secret_configured': bool(getattr(settings, 'NOWPAYMENTS_IPN_SECRET', None)),
+        })
+        
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': 'Webhook configuration test failed',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -763,6 +836,7 @@ class NOWPaymentsWebhookView(View):
                             payment.status = 'completed'
                             payment.completed_at = timezone.now()
                             payment.transaction_hash = webhook_data.get('outcome_hash', webhook_data.get('pay_hash', ''))
+                            payment.webhook_received = True  # Set webhook flag
                             payment.save()
                             
                             # Process successful payment (activate subscription, etc.)
@@ -776,6 +850,7 @@ class NOWPaymentsWebhookView(View):
                         try:
                             payment = Payment.objects.get(gateway_transaction_id=payment_id)
                             payment.status = 'failed'
+                            payment.webhook_received = True  # Set webhook flag
                             payment.save()
                             logger.info(f"Payment {payment.reference} marked as failed")
                         except Payment.DoesNotExist:

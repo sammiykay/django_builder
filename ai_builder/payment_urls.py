@@ -9,6 +9,7 @@ from .payment_views import (
     verify_flutterwave_payment,
     cancel_payment,
     get_user_payments,
+    test_webhook_config,
     FlutterwaveWebhookView,
     NOWPaymentsWebhookView,
     payment_callback
@@ -23,8 +24,9 @@ urlpatterns = [
     path('flutterwave/verify/', verify_flutterwave_payment, name='verify_flutterwave_payment'),
     path('flutterwave/webhook/', FlutterwaveWebhookView.as_view(), name='flutterwave_webhook'),
     
-    # NOWPayments webhooks
+    # NOWPayments webhooks (consolidated to avoid confusion)
     path('nowpayments/webhook/', NOWPaymentsWebhookView.as_view(), name='nowpayments_webhook'),
+    # Legacy handler - redirects to main webhook for backwards compatibility
     path('handler/', notify_url_handler, name='notify_url_handler'),
     
     # Crypto payments
@@ -32,6 +34,7 @@ urlpatterns = [
     path('crypto/invoice/', create_crypto_invoice, name='create_crypto_invoice'),
     
     # Payment history and callbacks (specific paths first)
+    path('test-webhook/', test_webhook_config, name='test_webhook_config'),
     path('history/', get_user_payments, name='get_user_payments'),
     path('callback/', payment_callback, name='payment_callback'),
     

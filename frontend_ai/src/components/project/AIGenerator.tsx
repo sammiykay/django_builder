@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Wand2, Loader2, CheckCircle, AlertCircle, FileText, Clock } from 'lucide-react';
+import { Wand2, Loader2, CheckCircle, AlertCircle, FileText, Clock, Folder } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { GenerationResponse } from '../../types/api';
 import Toast from '../ui/Toast';
+import RealTimeFileExplorer from './RealTimeFileExplorer';
 
 interface AIGeneratorProps {
   projectId: string;
@@ -14,7 +15,11 @@ interface GenerationProgress {
   message: string;
   progress: number;
   filesCreated: string[];
+  currentFile?: string;
+  totalFiles?: number;
   generationData?: GenerationResponse;
+  templateCount?: number;
+  requirementsGenerated?: boolean;
 }
 
 const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComplete }) => {
@@ -29,6 +34,7 @@ const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComple
   const [error, setError] = useState<string | null>(null);
   const [showToast, setShowToast] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [showFileExplorer, setShowFileExplorer] = useState(false);
 
   const examplePrompts = [
     'Create a blog application with user authentication and post management',
@@ -71,10 +77,43 @@ const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComple
               }));
               break;
               
+            case 'file_processing':
+              setProgress(prev => ({
+                ...prev,
+                currentFile: data.current_file,
+                totalFiles: data.total_files,
+                message: `Processing file: ${data.current_file}`
+              }));
+              break;
+              
             case 'file_created':
               setProgress(prev => ({
                 ...prev,
                 filesCreated: [...prev.filesCreated, data.file],
+                currentFile: data.file,
+                progress: data.progress || prev.progress,
+                totalFiles: data.total_files || prev.totalFiles
+              }));
+              // Auto-show file explorer when files start being created
+              if (!showFileExplorer) {
+                setShowFileExplorer(true);
+              }
+              break;
+              
+            case 'template_generated':
+              setProgress(prev => ({
+                ...prev,
+                message: `Generated template: ${data.template_name}`,
+                templateCount: (prev.templateCount || 0) + 1,
+                progress: data.progress || prev.progress
+              }));
+              break;
+              
+            case 'requirements_generated':
+              setProgress(prev => ({
+                ...prev,
+                message: 'Generated dynamic requirements.txt',
+                requirementsGenerated: true,
                 progress: data.progress || prev.progress
               }));
               break;
@@ -237,10 +276,23 @@ const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComple
   const isGenerating = ['initializing', 'analyzing', 'generating'].includes(progress.status);
 
   return (
-    <div className="h-full bg-gray-900 p-6">
-      <div className="max-w-4xl mx-auto">
+    <div className="h-full bg-gray-900 flex">
+      {/* Main Generation Panel */}
+      <div className={`${showFileExplorer ? 'w-2/3' : 'w-full'} p-6 transition-all duration-300`}>
+        <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-white mb-2">AI Project Generator</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-white">AI Project Generator</h2>
+            {progress.filesCreated.length > 0 && (
+              <button
+                onClick={() => setShowFileExplorer(!showFileExplorer)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg transition-colors"
+              >
+                <Folder className="w-4 h-4" />
+                <span className="text-sm">{showFileExplorer ? 'Hide' : 'Show'} Files</span>
+              </button>
+            )}
+          </div>
           <p className="text-gray-400">
             Describe what you want to build and I'll generate a complete Django project for you
           </p>
@@ -350,21 +402,80 @@ const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComple
               </div>
             )}
 
+            {/* Current Generation Status */}
+            {progress.currentFile && (
+              <div className="mb-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Clock className="w-4 h-4 text-blue-400" />
+                  <span className="text-sm font-medium text-blue-400">
+                    Currently generating...
+                  </span>
+                </div>
+                <div className="text-sm text-gray-300 font-mono bg-gray-800 px-3 py-2 rounded border-l-4 border-blue-500">
+                  {progress.currentFile}
+                </div>
+                {progress.totalFiles && (
+                  <div className="text-xs text-gray-400 mt-1">
+                    File {progress.filesCreated.length} of {progress.totalFiles}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Generation Statistics */}
+            {(progress.templateCount || progress.requirementsGenerated) && (
+              <div className="mb-4 grid grid-cols-2 gap-4">
+                {progress.templateCount && (
+                  <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
+                    <div className="text-sm text-gray-400">Templates Generated</div>
+                    <div className="text-lg font-semibold text-white">{progress.templateCount}</div>
+                  </div>
+                )}
+                {progress.requirementsGenerated && (
+                  <div className="bg-gray-800 p-3 rounded-lg border border-gray-700">
+                    <div className="text-sm text-gray-400">Requirements</div>
+                    <div className="text-lg font-semibold text-green-400">Dynamic</div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Files Created */}
             {progress.filesCreated.length > 0 && (
               <div>
-                <div className="flex items-center space-x-2 mb-3">
-                  <FileText className="w-4 h-4 text-green-400" />
-                  <span className="text-sm font-medium text-green-400">
-                    Files Created ({progress.filesCreated.length})
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
-                  {progress.filesCreated.map((file, index) => (
-                    <div key={index} className="text-sm text-gray-300 font-mono bg-gray-700 px-2 py-1 rounded">
-                      {file}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="w-4 h-4 text-green-400" />
+                    <span className="text-sm font-medium text-green-400">
+                      Files Created ({progress.filesCreated.length})
+                    </span>
+                  </div>
+                  {progress.totalFiles && (
+                    <div className="text-xs text-gray-400">
+                      {Math.round((progress.filesCreated.length / progress.totalFiles) * 100)}% complete
                     </div>
-                  ))}
+                  )}
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  <div className="space-y-1">
+                    {progress.filesCreated.map((file, index) => (
+                      <div 
+                        key={index} 
+                        className={`text-sm font-mono px-3 py-2 rounded transition-all duration-300 ${
+                          file === progress.currentFile 
+                            ? 'bg-blue-800 text-blue-200 border border-blue-600' 
+                            : 'bg-gray-700 text-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate">{file}</span>
+                          {file === progress.currentFile && (
+                            <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse ml-2"></div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -409,7 +520,23 @@ const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComple
             )}
           </div>
         )}
+        </div>
       </div>
+
+      {/* File Explorer Panel */}
+      {showFileExplorer && (
+        <div className="w-1/3 border-l border-gray-700">
+          <RealTimeFileExplorer
+            projectId={projectId}
+            filesCreated={progress.filesCreated}
+            currentFile={progress.currentFile}
+            onFileSelect={(file) => {
+              // Handle file selection for viewing/editing
+              console.log('Selected file:', file);
+            }}
+          />
+        </div>
+      )}
 
       {/* Toast Notification */}
       {showToast && error && (

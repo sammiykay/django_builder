@@ -39,6 +39,8 @@ interface PaymentStatus {
   actually_paid?: number;
   pay_address?: string;
   is_expired: boolean;
+  webhook_received?: boolean;
+  confirmation_source?: 'webhook' | 'api_poll';
 }
 
 const NOWPaymentWidget: React.FC<NOWPaymentWidgetProps> = ({
@@ -77,8 +79,22 @@ const NOWPaymentWidget: React.FC<NOWPaymentWidgetProps> = ({
         const statusData = response.data.payment as PaymentStatus;
         setStatus(statusData);
         
+        // CRITICAL FIX: Only trigger completion for webhook-confirmed payments
+        // This prevents premature success notifications from API polling
         if (statusData.status === 'completed' || statusData.payment_status === 'finished') {
-          setTimeout(() => onPaymentComplete(), 2000);
+          const isWebhookConfirmed = (statusData as any).webhook_received;
+          const confirmationSource = (statusData as any).confirmation_source;
+          
+          console.log(`Payment status check: ${statusData.status}/${statusData.payment_status}, webhook_received: ${isWebhookConfirmed}, source: ${confirmationSource}`);
+          
+          // Only auto-complete if confirmed by webhook OR if explicitly confirmed by API with high confidence
+          if (isWebhookConfirmed || confirmationSource === 'webhook') {
+            console.log('✅ Payment confirmed by webhook - triggering completion');
+            setTimeout(() => onPaymentComplete(), 2000);
+          } else {
+            console.log('⏳ Payment confirmed by API polling only - waiting for webhook confirmation');
+            // Don't auto-complete yet, keep polling for webhook confirmation
+          }
         } else if (statusData.status === 'failed' || statusData.is_expired || statusData.payment_status === 'failed') {
           onPaymentFailed(statusData.is_expired ? 'Payment expired' : 'Payment failed');
         }
@@ -296,6 +312,16 @@ const NOWPaymentWidget: React.FC<NOWPaymentWidgetProps> = ({
           <span className={`font-medium ${getStatusColor()}`}>
             {status ? (status.payment_status || status.status).charAt(0).toUpperCase() + (status.payment_status || status.status).slice(1) : 'Waiting for payment...'}
           </span>
+          {status && status.webhook_received && (
+            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+              Webhook Confirmed
+            </span>
+          )}
+          {status && status.confirmation_source === 'api_poll' && (
+            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">
+              API Confirmed
+            </span>
+          )}
         </div>
         
         {status?.transaction_hash && (

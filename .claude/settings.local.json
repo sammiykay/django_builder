@@ -39,7 +39,10 @@
       "Bash(pip freeze)",
       "Bash(pip3 install:*)",
       "WebFetch(domain:documenter.getpostman.com)",
-      "WebFetch(domain:nowpayments.io)"
+      "WebFetch(domain:nowpayments.io)",
+      "Bash(groups $USER)",
+      "Bash(sudo systemctl start:*)",
+      "Bash(docker:*)"
     ],
     "deny": []
   }

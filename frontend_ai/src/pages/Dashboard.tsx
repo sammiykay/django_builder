@@ -125,25 +125,19 @@ const Dashboard: React.FC = () => {
 
     setIsGenerating(true);
     try {
-      // Create project with AI generation
-      const projectData = {
-        name: userInput.split(' ').slice(0, 3).join(' '), // Use first few words as name
-        description: userInput,
-        python_version: '3.11',
-        django_version: '5.0',
-        project_type: 'web_app',
-        complexity_level: 'simple',
-        target_audience: '',
-        key_features: [],
-        technical_requirements: {}
-      };
-
-      const project = await apiService.createProject(projectData);
+      // Use quick create and generate to actually build the Django project
+      const result = await apiService.quickCreateAndGenerate(userInput.trim());
       
-      // Navigate to the project page
-      navigate(`/project/${project.id}`);
+      if (result.success) {
+        // Navigate to the project page
+        navigate(`/project/${result.project_id}`);
+      } else {
+        console.error('Failed to create project:', result.error);
+        alert('Failed to create project: ' + (result.error || 'Unknown error'));
+      }
     } catch (error) {
       console.error('Failed to create project:', error);
+      alert('Failed to create project. Please try again.');
     } finally {
       setIsGenerating(false);
     }

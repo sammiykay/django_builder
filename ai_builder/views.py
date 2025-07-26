@@ -576,11 +576,18 @@ Include code examples and step-by-step instructions.
                     total_files = len(list(project_path.rglob('*')))
                     
                     # Walk through all generated files and save them
-                    for file_path in project_path.rglob('*'):
+                    all_files = list(project_path.rglob('*'))
+                    file_count = 0
+                    total_files = len([f for f in all_files if f.is_file() and not f.name.startswith('.')])
+                    
+                    for file_path in all_files:
                         if file_path.is_file() and not file_path.name.startswith('.'):
                             try:
                                 # Get relative path from project root
                                 relative_path = file_path.relative_to(project_path)
+                                
+                                # Send current file update
+                                yield f"data: {json.dumps({'type': 'file_processing', 'current_file': str(relative_path), 'file_count': file_count, 'total_files': total_files})}\n\n"
                                 
                                 # Read file content
                                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -602,7 +609,19 @@ Include code examples and step-by-step instructions.
                                 file_count += 1
                                 progress = (file_count / total_files) * 100
                                 
-                                yield f"data: {json.dumps({'type': 'file_created', 'file': str(relative_path), 'progress': progress})}\n\n"
+                                # Send file created update with detailed info
+                                file_type = 'template' if 'templates' in str(relative_path) else 'code'
+                                yield f"data: {json.dumps({'type': 'file_created', 'file': str(relative_path), 'file_type': file_type, 'progress': progress, 'total_files': total_files})}\n\n"
+                                
+                                # Special updates for specific file types
+                                if str(relative_path) == 'requirements.txt':
+                                    yield f"data: {json.dumps({'type': 'requirements_generated', 'progress': progress})}\n\n"
+                                elif 'templates' in str(relative_path) and str(relative_path).endswith('.html'):
+                                    yield f"data: {json.dumps({'type': 'template_generated', 'template_name': relative_path.name, 'progress': progress})}\n\n"
+                                
+                                # Small delay for better UX
+                                import time
+                                time.sleep(0.1)
                                 
                             except Exception as e:
                                 logger.error(f"Failed to save file {file_path}: {e}")

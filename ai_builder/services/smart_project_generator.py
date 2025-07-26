@@ -10,7 +10,18 @@ import re
 
 from .claude_service import ClaudeService
 
+# Configure comprehensive logging
 logger = logging.getLogger(__name__)
+
+# Ensure logger is properly configured
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s:%(lineno)d] - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 
 class SmartProjectGenerator:
@@ -23,6 +34,64 @@ class SmartProjectGenerator:
         self.base_dir = Path(base_dir)
         self.claude_service = ClaudeService()
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize error tracking
+        self.generation_errors = []
+        self.generation_stats = {
+            'files_attempted': 0,
+            'files_succeeded': 0,
+            'files_failed': 0,
+            'retries_used': 0,
+            'total_generation_time': 0
+        }
+    
+    def _track_error(self, error_type: str, error_message: str, context: dict = None):
+        """Track errors for analysis and debugging."""
+        error_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'error_type': error_type,
+            'error_message': str(error_message),
+            'context': context or {},
+            'stack_trace': None
+        }
+        
+        # Capture stack trace for debugging
+        import traceback
+        error_entry['stack_trace'] = traceback.format_exc()
+        
+        self.generation_errors.append(error_entry)
+        logger.error(f"Error tracked: {error_type} - {error_message}", extra={'context': context})
+    
+    def _update_stats(self, stat_name: str, increment: int = 1):
+        """Update generation statistics."""
+        if stat_name in self.generation_stats:
+            self.generation_stats[stat_name] += increment
+    
+    def get_generation_report(self) -> dict:
+        """Get comprehensive generation report including errors and stats."""
+        success_rate = 0
+        if self.generation_stats['files_attempted'] > 0:
+            success_rate = (self.generation_stats['files_succeeded'] / self.generation_stats['files_attempted']) * 100
+        
+        return {
+            'statistics': self.generation_stats,
+            'success_rate': round(success_rate, 2),
+            'errors': self.generation_errors,
+            'error_summary': self._get_error_summary()
+        }
+    
+    def _get_error_summary(self) -> dict:
+        """Get summary of errors by type."""
+        error_counts = {}
+        for error in self.generation_errors:
+            error_type = error['error_type']
+            error_counts[error_type] = error_counts.get(error_type, 0) + 1
+        
+        return {
+            'total_errors': len(self.generation_errors),
+            'error_types': error_counts,
+            'most_common_error': max(error_counts.items(), key=lambda x: x[1])[0] if error_counts else None
+        }
     
     def generate_project_from_prompt(self, user_prompt: str, project_id: str) -> Dict:
         """
@@ -31,23 +100,63 @@ class SmartProjectGenerator:
         """
         
         try:
+            # Validate inputs
+            if not user_prompt or not user_prompt.strip():
+                return {
+                    'success': False,
+                    'error': 'User prompt is required and cannot be empty'
+                }
+            
+            if not project_id or not project_id.strip():
+                return {
+                    'success': False,
+                    'error': 'Project ID is required and cannot be empty'
+                }
+            
             logger.info(f"Starting dynamic project generation for: {project_id}")
             
             # Step 1: Analyze and plan the entire project with AI
             project_plan = self._create_complete_project_plan(user_prompt, project_id)
             
             if not project_plan or not project_plan.get('success'):
+                error_msg = 'Failed to create project plan'
+                if project_plan and project_plan.get('error'):
+                    error_msg += f": {project_plan.get('error')}"
                 return {
                     'success': False,
-                    'error': 'Failed to create project plan',
+                    'error': error_msg,
                     'details': project_plan.get('error') if project_plan else 'Unknown error'
+                }
+            
+            # Validate the plan structure
+            plan_data = project_plan['plan']
+            required_fields = ['project_name', 'description', 'apps']
+            missing_fields = [field for field in required_fields if field not in plan_data]
+            
+            if missing_fields:
+                return {
+                    'success': False,
+                    'error': f'Invalid project plan: missing required fields: {", ".join(missing_fields)}'
+                }
+            
+            # Ensure apps is a list and not empty
+            if not isinstance(plan_data.get('apps'), list) or len(plan_data['apps']) == 0:
+                return {
+                    'success': False,
+                    'error': 'Project plan must include at least one app'
                 }
             
             # Step 2: Create project directory
             project_path = self.base_dir / project_id
-            if project_path.exists():
-                shutil.rmtree(project_path)
-            project_path.mkdir(parents=True)
+            try:
+                if project_path.exists():
+                    shutil.rmtree(project_path)
+                project_path.mkdir(parents=True)
+            except Exception as e:
+                return {
+                    'success': False,
+                    'error': f'Failed to create project directory: {str(e)}'
+                }
             
             # Step 3: Generate ALL files dynamically based on the plan
             generation_result = self._generate_entire_project(
@@ -119,7 +228,7 @@ Your response must be a valid JSON object with this structure:
     "tech_stack": {{
         "backend": ["Django", "other backend tech"],
         "frontend": ["specific frontend tech based on request"],
-        "database": "PostgreSQL/MySQL/SQLite based on complexity",
+        "database": "SQLite (lightweight and included with Python)",
         "additional": ["any other tech needed"]
     }},
     "apps": [
@@ -272,6 +381,8 @@ Generate a complete, detailed plan for an amazing Django application!
             plan = self._parse_json_response(content)
             
             if plan:
+                # Add the user prompt to the plan for later reference
+                plan['user_prompt'] = user_prompt
                 return {
                     'success': True,
                     'plan': plan
@@ -299,43 +410,99 @@ Generate a complete, detailed plan for an amazing Django application!
         
         try:
             # 1. Generate Django project files
-            django_files = self._generate_django_core_files(project_plan, project_path)
-            generated_files.extend(django_files)
+            logger.info("Generating Django core files...")
+            try:
+                django_files = self._generate_django_core_files(project_plan, project_path)
+                generated_files.extend(django_files)
+                logger.info(f"Generated {len(django_files)} Django core files")
+            except Exception as e:
+                logger.error(f"Failed to generate Django core files: {e}")
+                raise Exception(f"Django core file generation failed: {str(e)}")
             
             # 2. Generate app files for each app
-            for app_config in project_plan['apps']:
-                app_files = self._generate_complete_app(
-                    app_config,
-                    project_plan,
-                    project_path,
-                    user_prompt
-                )
-                generated_files.extend(app_files)
+            logger.info(f"Generating {len(project_plan['apps'])} Django apps...")
+            for i, app_config in enumerate(project_plan['apps'], 1):
+                try:
+                    # Validate app config
+                    if not isinstance(app_config, dict) or 'name' not in app_config:
+                        logger.warning(f"Skipping invalid app config at index {i-1}: {app_config}")
+                        continue
+                    
+                    logger.info(f"Generating app {i}/{len(project_plan['apps'])}: {app_config['name']}")
+                    app_files = self._generate_complete_app(
+                        app_config,
+                        project_plan,
+                        project_path,
+                        user_prompt
+                    )
+                    generated_files.extend(app_files)
+                    logger.info(f"Generated {len(app_files)} files for app {app_config['name']}")
+                except Exception as e:
+                    logger.error(f"Failed to generate app {app_config.get('name', f'app_{i}')}: {e}")
+                    # Continue with other apps instead of failing completely
+                    continue
             
             # 3. Generate static files
-            static_files = self._generate_static_files(project_plan, project_path)
-            generated_files.extend(static_files)
+            try:
+                logger.info("Generating static files...")
+                static_files = self._generate_static_files(project_plan, project_path)
+                generated_files.extend(static_files)
+                logger.info(f"Generated {len(static_files)} static files")
+            except Exception as e:
+                logger.error(f"Failed to generate static files: {e}")
+                # Static files are not critical, continue without them
             
             # 4. Generate templates
-            template_files = self._generate_all_templates(project_plan, project_path, user_prompt)
-            generated_files.extend(template_files)
+            try:
+                logger.info("Generating templates...")
+                template_files = self._generate_all_templates(project_plan, project_path, user_prompt)
+                generated_files.extend(template_files)
+                logger.info(f"Generated {len(template_files)} template files")
+            except Exception as e:
+                logger.error(f"Failed to generate templates: {e}")
+                # Templates are critical, but we can continue with basic ones
             
             # 5. Generate configuration files
-            config_files = self._generate_config_files(project_plan, project_path)
-            generated_files.extend(config_files)
+            try:
+                logger.info("Generating configuration files...")
+                config_files = self._generate_config_files(project_plan, project_path)
+                generated_files.extend(config_files)
+                logger.info(f"Generated {len(config_files)} configuration files")
+            except Exception as e:
+                logger.error(f"Failed to generate configuration files: {e}")
+                # Config files are critical, create minimal ones
+                self._create_minimal_config_files(project_path)
             
             # 6. Generate deployment files if needed
             if project_plan.get('deployment', {}).get('dockerfile'):
-                deployment_files = self._generate_deployment_files(project_plan, project_path)
-                generated_files.extend(deployment_files)
+                try:
+                    logger.info("Generating deployment files...")
+                    deployment_files = self._generate_deployment_files(project_plan, project_path)
+                    generated_files.extend(deployment_files)
+                    logger.info(f"Generated {len(deployment_files)} deployment files")
+                except Exception as e:
+                    logger.error(f"Failed to generate deployment files: {e}")
+                    # Deployment files are optional
             
             # 7. Generate tests
-            test_files = self._generate_test_files(project_plan, project_path)
-            generated_files.extend(test_files)
+            try:
+                logger.info("Generating test files...")
+                test_files = self._generate_test_files(project_plan, project_path)
+                generated_files.extend(test_files)
+                logger.info(f"Generated {len(test_files)} test files")
+            except Exception as e:
+                logger.error(f"Failed to generate test files: {e}")
+                # Test files are optional
             
             # 8. Generate documentation
-            doc_files = self._generate_documentation(project_plan, project_path, user_prompt)
-            generated_files.extend(doc_files)
+            try:
+                logger.info("Generating documentation...")
+                doc_files = self._generate_documentation(project_plan, project_path, user_prompt)
+                generated_files.extend(doc_files)
+                logger.info(f"Generated {len(doc_files)} documentation files")
+            except Exception as e:
+                logger.error(f"Failed to generate documentation: {e}")
+                # Documentation is optional
             
             return {
                 'success': True,
@@ -629,25 +796,33 @@ Return ONLY the Python code.
         templates_path = project_path / 'templates'
         templates_path.mkdir(exist_ok=True)
         
-        # Generate base template
+        # Generate base template with advanced features
         base_template_prompt = f"""
-Create a base.html template for this Django project:
+Create a comprehensive base.html template for this Django project:
 
 Project: {project_plan['project_name']}
 Description: {project_plan['description']}
 UI Design: {json.dumps(project_plan.get('ui_design', {}), indent=2)}
 Features: {project_plan['features']}
+Project Type: {project_plan.get('project_type', 'web_app')}
 
 Requirements:
-- Modern, responsive design
-- Include navigation bar with all app links
-- User authentication UI (login/logout)
-- Messages/notifications area
-- Footer with relevant information
-- Use {project_plan.get('ui_design', {}).get('framework', 'Bootstrap')}
-- Include necessary CSS/JS files
-- Beautiful and professional design
-- Mobile-friendly
+- Modern, responsive design using {project_plan.get('ui_design', {}).get('framework', 'Bootstrap 5')}
+- Dark/light theme toggle if modern theme
+- Navigation bar with dropdown menus for all apps
+- User authentication UI (login/logout/register/profile)
+- Real-time notifications area with toast messages
+- Search functionality if applicable
+- Footer with social links and project info
+- SEO meta tags
+- Progressive Web App (PWA) features
+- Accessibility features (ARIA labels, keyboard navigation)
+- Loading states and animations
+- Mobile-first responsive design
+- Include necessary CSS/JS CDNs and custom files
+
+Special features based on project type:
+{self._get_template_features_for_project_type(project_plan.get('project_type', 'web_app'))}
 
 Return ONLY the HTML code.
 """
@@ -655,22 +830,29 @@ Return ONLY the HTML code.
         base_content = self._generate_code_with_ai(base_template_prompt)
         files.append(self._save_file(templates_path / 'base.html', base_content))
         
-        # Generate home page
+        # Generate dynamic home page based on project type
         home_template_prompt = f"""
-Create a home.html template for this Django project:
+Create a dynamic home.html template for this Django project:
 
 Project: {project_plan['project_name']}
 Description: {project_plan['description']}
 Original request: "{user_prompt}"
 Features: {project_plan['features']}
+Project Type: {project_plan.get('project_type', 'web_app')}
 
-Create an impressive landing page that:
+Create an engaging landing page that:
 - Extends base.html
-- Shows what the application does
-- Highlights key features
-- Includes call-to-action buttons
-- Modern, attractive design
-- Relevant to the specific application type
+- Hero section with compelling headline and CTA
+- Feature showcase with icons and descriptions
+- Testimonials/reviews section if applicable
+- Statistics/metrics dashboard if relevant
+- Recent content/activity feed
+- Call-to-action sections throughout
+- Interactive elements and animations
+- Mobile-optimized layout
+
+Specific to {project_plan.get('project_type', 'web_app')}:
+{self._get_home_features_for_project_type(project_plan.get('project_type', 'web_app'))}
 
 Return ONLY the HTML code.
 """
@@ -678,11 +860,118 @@ Return ONLY the HTML code.
         home_content = self._generate_code_with_ai(home_template_prompt)
         files.append(self._save_file(templates_path / 'home.html', home_content))
         
-        # Generate templates for each app
+        # Generate authentication templates
+        auth_templates = ['login.html', 'register.html', 'profile.html', 'password_reset.html']
+        for auth_template in auth_templates:
+            auth_prompt = f"""
+Create {auth_template} for Django authentication:
+
+Project: {project_plan['project_name']}
+Theme: {project_plan.get('ui_design', {}).get('theme', 'modern')}
+
+Create a beautiful, secure authentication page with:
+- Modern form design with validation
+- Social login options if configured
+- Proper CSRF protection
+- User-friendly error messages
+- Responsive design
+- Loading states
+- Accessibility features
+
+Return ONLY the HTML code.
+"""
+            
+            auth_content = self._generate_code_with_ai(auth_prompt)
+            files.append(self._save_file(templates_path / auth_template, auth_content))
+        
+        # Generate templates for each app with enhanced features
         for app in project_plan['apps']:
             app_templates_path = project_path / app['name'] / 'templates' / app['name']
             app_templates_path.mkdir(parents=True, exist_ok=True)
             
+            # Generate standard CRUD templates for each model
+            for model in app.get('models', []):
+                model_name = model['name']
+                model_fields = model.get('fields', [])
+                
+                # List view template
+                list_template_prompt = f"""
+Create {model_name.lower()}_list.html template for Django app '{app['name']}':
+
+Model: {model_name}
+Fields: {model_fields}
+App purpose: {app['purpose']}
+Features: Advanced list view with search, filtering, pagination
+
+Create a comprehensive list template with:
+- Data table with sorting and filtering
+- Search functionality
+- Pagination with page size options
+- Bulk actions (select all, delete selected)
+- Export options (CSV, PDF)
+- Add new button
+- Quick view modals
+- Loading states and animations
+- Responsive design for mobile
+
+Return ONLY the HTML code.
+"""
+                
+                list_content = self._generate_code_with_ai(list_template_prompt)
+                files.append(self._save_file(app_templates_path / f'{model_name.lower()}_list.html', list_content))
+                
+                # Detail view template
+                detail_template_prompt = f"""
+Create {model_name.lower()}_detail.html template for Django app '{app['name']}':
+
+Model: {model_name}
+Fields: {model_fields}
+App purpose: {app['purpose']}
+
+Create a detailed view template with:
+- Clean, organized field display
+- Edit/Delete action buttons
+- Related objects display
+- Activity history if applicable
+- Share functionality
+- Print-friendly layout
+- Image gallery if has images
+- Comments section if relevant
+- Breadcrumb navigation
+
+Return ONLY the HTML code.
+"""
+                
+                detail_content = self._generate_code_with_ai(detail_template_prompt)
+                files.append(self._save_file(app_templates_path / f'{model_name.lower()}_detail.html', detail_content))
+                
+                # Form template (create/edit)
+                form_template_prompt = f"""
+Create {model_name.lower()}_form.html template for Django app '{app['name']}':
+
+Model: {model_name}
+Fields: {model_fields}
+App purpose: {app['purpose']}
+
+Create a comprehensive form template with:
+- Step-by-step form wizard if complex
+- Real-time validation feedback
+- Auto-save functionality
+- File upload with drag-and-drop if applicable
+- Rich text editor for text fields
+- Date/time pickers for date fields
+- Image preview for image uploads
+- Form progress indicator
+- Cancel and save draft options
+- Accessibility features
+
+Return ONLY the HTML code.
+"""
+                
+                form_content = self._generate_code_with_ai(form_template_prompt)
+                files.append(self._save_file(app_templates_path / f'{model_name.lower()}_form.html', form_content))
+            
+            # Generate custom templates specified in the plan
             for template_config in app.get('templates', []):
                 template_prompt = f"""
 Create {template_config['name']} template for Django app '{app['name']}':
@@ -694,13 +983,15 @@ Uses forms: {template_config.get('includes_forms', False)}
 Uses AJAX: {template_config.get('uses_ajax', False)}
 Models: {[model['name'] for model in app.get('models', [])]}
 
-Create a template that:
-- Extends base.html
-- Serves its specific purpose perfectly
-- Looks professional and modern
-- Handles forms properly if included
-- Includes AJAX functionality if specified
-- Is specific to this application (not generic)
+Create an advanced template with:
+- Interactive UI components
+- Real-time updates if AJAX enabled
+- Progressive enhancement
+- Error handling and loading states
+- Keyboard shortcuts
+- Print-friendly version
+- SEO optimization
+- Social sharing if applicable
 
 Return ONLY the HTML code.
 """
@@ -709,13 +1000,31 @@ Return ONLY the HTML code.
                 template_path = app_templates_path / template_config['name']
                 files.append(self._save_file(template_path, template_content))
         
-        # Generate error pages
-        for error_code in ['404', '500']:
+        # Generate enhanced error pages
+        error_pages = {
+            '400': 'Bad Request',
+            '403': 'Forbidden', 
+            '404': 'Page Not Found',
+            '500': 'Server Error',
+            '503': 'Service Unavailable'
+        }
+        
+        for error_code, error_title in error_pages.items():
             error_prompt = f"""
 Create {error_code}.html error page for Django project '{project_plan['project_name']}':
 
-Make it friendly, helpful, and consistent with the project's design.
-Include a way to return to the home page.
+Error: {error_code} - {error_title}
+Project theme: {project_plan.get('ui_design', {}).get('theme', 'modern')}
+
+Create an engaging error page with:
+- Friendly, helpful message
+- Search functionality
+- Popular pages links
+- Contact support option
+- Fun illustration or animation
+- Automatic redirect timer for some errors
+- Consistent with project design
+- Mobile-friendly layout
 
 Return ONLY the HTML code.
 """
@@ -723,7 +1032,57 @@ Return ONLY the HTML code.
             error_content = self._generate_code_with_ai(error_prompt)
             files.append(self._save_file(templates_path / f'{error_code}.html', error_content))
         
+        # Generate component templates (reusable components)
+        component_templates = ['pagination.html', 'search_form.html', 'notification_toast.html', 'loading_spinner.html']
+        for component in component_templates:
+            component_prompt = f"""
+Create reusable {component} component template:
+
+Project: {project_plan['project_name']}
+Theme: {project_plan.get('ui_design', {}).get('theme', 'modern')}
+
+Create a modular, reusable component that:
+- Can be included in other templates
+- Follows design system patterns
+- Is accessible and responsive
+- Includes proper ARIA labels
+- Has customizable parameters
+
+Return ONLY the HTML code.
+"""
+            
+            component_content = self._generate_code_with_ai(component_prompt)
+            components_path = templates_path / 'components'
+            components_path.mkdir(exist_ok=True)
+            files.append(self._save_file(components_path / component, component_content))
+        
         return files
+    
+    def _get_template_features_for_project_type(self, project_type: str) -> str:
+        """Get specific template features based on project type."""
+        features_map = {
+            'blog': '- Article reading progress bar\n- Social sharing buttons\n- Comment system UI\n- Tag cloud widget',
+            'ecommerce': '- Shopping cart dropdown\n- Product quick view modals\n- Wishlist functionality\n- Price comparison widgets',
+            'social': '- Live chat interface\n- Activity feed components\n- Friend request notifications\n- Real-time messaging UI',
+            'dashboard': '- Widget-based layout\n- Drag-and-drop dashboard\n- Chart containers\n- Data export options',
+            'api': '- API documentation viewer\n- Request/response panels\n- Rate limiting indicators\n- Interactive API explorer',
+            'portfolio': '- Image galleries\n- Project showcase grid\n- Contact form modal\n- Smooth scrolling navigation',
+            'education': '- Course progress tracking\n- Quiz interface components\n- Video player controls\n- Student dashboard widgets'
+        }
+        return features_map.get(project_type, '- Standard web application features')
+    
+    def _get_home_features_for_project_type(self, project_type: str) -> str:
+        """Get specific home page features based on project type."""
+        features_map = {
+            'blog': '- Featured articles carousel\n- Recent posts grid\n- Author spotlight\n- Newsletter signup',
+            'ecommerce': '- Product categories showcase\n- Best sellers section\n- Promotional banners\n- Customer reviews',
+            'social': '- Activity feed preview\n- User statistics\n- Trending topics\n- Community highlights',
+            'dashboard': '- Quick stats overview\n- Recent activity feed\n- Performance metrics\n- Shortcut buttons',
+            'api': '- API endpoint showcase\n- Usage statistics\n- Developer resources\n- Integration examples',
+            'portfolio': '- Project gallery\n- Skills showcase\n- Client testimonials\n- Contact information',
+            'education': '- Course catalog preview\n- Learning paths\n- Student achievements\n- Instructor highlights'
+        }
+        return features_map.get(project_type, '- General purpose content sections')
     
     def _generate_static_files(self, project_plan: Dict, project_path: Path) -> List[Dict]:
         """Generate CSS and JavaScript files dynamically."""
@@ -827,6 +1186,7 @@ Return ONLY the file content.
         features = str(project_plan.get('features', {})).lower()
         apps_data = str(project_plan.get('apps', [])).lower()
         tech_stack = project_plan.get('tech_stack', {})
+        special_features = project_plan.get('special_features', {})
         
         # Combine all text for comprehensive analysis
         full_context = f"{user_prompt} {description} {features} {apps_data}".lower()
@@ -908,29 +1268,9 @@ Return ONLY the file content.
         # Debug toolbar middleware (development only)
         middleware.append('debug_toolbar.middleware.DebugToolbarMiddleware')
         
-        # Database configuration based on detected requirements
-        database = tech_stack.get('database', 'sqlite').lower()
-        if 'postgres' in database or 'postgresql' in full_context:
-            db_config = """'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME', f'{project_name}_db'),
-        'USER': os.getenv('DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('DB_PASSWORD', ''),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-    }"""
-        elif 'mysql' in database or 'mysql' in full_context:
-            db_config = """'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME', f'{project_name}_db'),
-        'USER': os.getenv('DB_USER', 'root'),
-        'PASSWORD': os.getenv('DB_PASSWORD', ''),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '3306'),
-    }"""
-        else:
-            # SQLite for simplicity and container compatibility
-            db_config = """'default': {
+        # Database configuration - Always use SQLite for generated projects
+        # SQLite is ideal for development, testing, and small-to-medium projects
+        db_config = """'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }"""
@@ -938,8 +1278,9 @@ Return ONLY the file content.
         # Generate additional configuration sections
         additional_configs = []
         
-        # WebSocket/Channels configuration
-        if ('websocket' in full_context or 'real-time' in full_context or 'chat' in full_context):
+        # WebSocket/Channels configuration - Only for explicit WebSocket apps
+        if ('websocket' in full_context or 'real-time chat' in full_context or 
+            special_features.get('websockets')):
             additional_configs.append("""
 # Channels/WebSocket Configuration
 ASGI_APPLICATION = '{project_name}.asgi.application'
@@ -952,8 +1293,9 @@ CHANNEL_LAYERS = {{
     }},
 }}""".format(project_name=project_name))
 
-        # Celery configuration
-        if ('task' in full_context or 'job' in full_context or 'background' in full_context or 'celery' in full_context):
+        # Celery configuration - Only for explicit background task requirements
+        if ('celery' in full_context or 'background task' in full_context or 
+            special_features.get('celery_tasks')):
             additional_configs.append("""
 # Celery Configuration
 CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
@@ -1017,18 +1359,18 @@ TEMPLATES = [
 WSGI_APPLICATION = '{project_name}.wsgi.application'
 
 # Database
+# Using SQLite for development and small-to-medium applications
+# SQLite is file-based, requires no setup, and is perfect for getting started
+# For production with high traffic, consider PostgreSQL or MySQL
 DATABASES = {{
     {db_config}
 }}
 
-# Caching
+# Caching - Use local memory cache for simplicity
 CACHES = {{
     'default': {{
-        'BACKEND': 'django_redis.cache.RedisCache' if 'redis' in full_context else 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': os.getenv('REDIS_URL', '127.0.0.1:6379:1') if 'redis' in full_context else '',
-        'OPTIONS': {{
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        }} if 'redis' in full_context else {{}},
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
     }}
 }}
 
@@ -1179,9 +1521,15 @@ CORS_ALLOWED_ORIGINS += ["http://localhost:3001"]  # Next.js dev server'''
         features = str(project_plan.get('features', {})).lower()
         apps_data = str(project_plan.get('apps', [])).lower()
         tech_stack = project_plan.get('tech_stack', {})
+        project_type = project_plan.get('project_type', 'web_app')
+        special_features = project_plan.get('special_features', {})
         
         # Combine all text for comprehensive analysis
         full_context = f"{user_prompt} {description} {features} {apps_data}".lower()
+        
+        # Project type specific requirements
+        type_requirements = self._get_requirements_for_project_type(project_type)
+        requirements.extend(type_requirements)
         
         # API and REST Framework
         has_api = any(app.get('api_endpoints') for app in project_plan['apps'])
@@ -1190,6 +1538,8 @@ CORS_ALLOWED_ORIGINS += ["http://localhost:3001"]  # Next.js dev server'''
                 'djangorestframework==3.15.2',
                 'djangorestframework-simplejwt==5.3.0',  # JWT authentication
                 'django-filter==23.4',                   # API filtering
+                'drf-spectacular==0.27.0',               # OpenAPI schema generation
+                'django-rest-swagger==2.2.0',           # API documentation
             ])
         
         # CORS for frontend integration
@@ -1197,76 +1547,113 @@ CORS_ALLOWED_ORIGINS += ["http://localhost:3001"]  # Next.js dev server'''
             'angular' in full_context or 'cors' in full_context or 'spa' in full_context):
             requirements.append('django-cors-headers==4.3.1')
         
-        # Database packages
-        database = tech_stack.get('database', 'sqlite').lower()
-        if 'postgres' in database or 'postgresql' in full_context:
-            requirements.append('psycopg2-binary==2.9.9')
-        elif 'mysql' in database or 'mysql' in full_context:
-            requirements.append('mysqlclient==2.2.4')
+        # Database packages - SQLite only (no additional packages needed)
+        # SQLite is included with Python, no extra dependencies required
+        # This keeps projects lightweight and easy to deploy
         
-        # Image processing
+        # Image and media processing
         if ('image' in full_context or 'photo' in full_context or 'upload' in full_context or
             'media' in full_context or 'file' in full_context or 'avatar' in full_context):
-            requirements.append('Pillow==10.1.0')
-        
-        # Real-time features (WebSockets, Chat)
-        if ('websocket' in full_context or 'real-time' in full_context or 'chat' in full_context or
-            'notification' in full_context or 'live' in full_context or 'socket' in full_context):
             requirements.extend([
-                'channels==4.0.0',
-                'channels-redis==4.1.0',
-                'daphne==4.0.0',  # ASGI server
+                'Pillow==10.1.0',
+                'django-imagekit==5.0.0',               # Image processing utilities
+                'python-magic==0.4.27',                 # File type detection
             ])
         
-        # Caching and Redis
-        if ('cache' in full_context or 'redis' in full_context or 'session' in full_context or
-            'websocket' in full_context):
-            requirements.append('django-redis==5.4.0')
+        # Real-time features (WebSockets, Chat) - Only for explicitly real-time apps
+        if ('websocket' in full_context or 'real-time chat' in full_context or 
+            special_features.get('websockets')):
+            requirements.extend([
+                'channels==4.0.0',
+                'channels-redis==4.1.0',               # Redis backend for channels
+                'daphne==4.0.0',                       # ASGI server
+                'redis==5.0.1',                        # Required for channels-redis
+            ])
+        elif ('chat' in full_context or 'notification' in full_context):
+            # Simple notifications without WebSockets
+            requirements.append('django-notifications-hq==1.8.3')
+        
+        # Caching - Only add Redis if explicitly requested
+        if 'redis' in full_context and ('cache' in full_context or 'redis cache' in full_context):
+            requirements.extend([
+                'django-redis==5.4.0',
+                'hiredis==2.2.3',                       # Faster Redis client
+            ])
         
         # Authentication systems
         if 'auth' in full_context:
             if ('social' in full_context or 'google' in full_context or 'github' in full_context or
                 'facebook' in full_context or 'oauth' in full_context):
-                requirements.append('django-allauth==0.57.0')
+                requirements.extend([
+                    'django-allauth==0.57.0',
+                    'PyJWT==2.8.0',                     # JWT handling
+                ])
         
         # Payment processing
-        if ('payment' in full_context or 'stripe' in full_context or 'billing' in full_context or
-            'subscription' in full_context or 'checkout' in full_context):
+        if (special_features.get('payments') or 'payment' in full_context or 'stripe' in full_context or 
+            'billing' in full_context or 'subscription' in full_context or 'checkout' in full_context):
             requirements.extend([
                 'stripe==7.8.0',
                 'requests==2.31.0',
+                'django-payments==2.0.0',               # Payment gateway abstraction
             ])
         
         # Email functionality
-        if ('email' in full_context or 'mail' in full_context or 'notification' in full_context):
+        if (special_features.get('email_sending') or 'email' in full_context or 'mail' in full_context or 
+            'notification' in full_context):
             requirements.extend([
                 'django-anymail==10.2',
-                'celery==5.3.4',  # For async email sending
+                'celery==5.3.4',                        # For async email sending
+                'django-email-verification==0.3.4',     # Email verification
             ])
         
-        # Background tasks
-        if ('task' in full_context or 'job' in full_context or 'queue' in full_context or
-            'background' in full_context or 'async' in full_context or 'celery' in full_context):
+        # Background tasks - Only add if explicitly requested for complex tasks
+        if ('celery' in full_context or 'background task' in full_context or 
+            'queue' in full_context or special_features.get('celery_tasks')):
             requirements.extend([
                 'celery==5.3.4',
-                'redis==5.0.1',
+                'redis==5.0.1',                         # Message broker for Celery
+                'django-celery-beat==2.5.0',            # Periodic tasks
+                'django-celery-results==2.5.0',         # Task results backend
+                'flower==2.0.1',                        # Celery monitoring
             ])
         
         # Search functionality
-        if ('search' in full_context or 'elasticsearch' in full_context or 'solr' in full_context):
-            requirements.append('django-elasticsearch-dsl==8.0')
+        if (special_features.get('search') or 'search' in full_context or 'elasticsearch' in full_context or 
+            'solr' in full_context):
+            if 'elasticsearch' in full_context:
+                requirements.extend([
+                    'django-elasticsearch-dsl==8.0',
+                    'elasticsearch==8.11.0',
+                ])
+            else:
+                requirements.extend([
+                    'django-haystack==3.2.1',           # Search abstraction
+                    'whoosh==2.7.4',                    # Pure Python search engine
+                ])
         
         # Forms and UI enhancements
         if ('form' in full_context or 'crispy' in full_context or 'bootstrap' in full_context):
+            framework = project_plan.get('ui_design', {}).get('framework', 'bootstrap')
             requirements.extend([
                 'django-crispy-forms==2.1',
-                'crispy-bootstrap5==0.7',
+                f'crispy-{framework.lower()}==0.7' if framework.lower() in ['bootstrap5', 'tailwind'] else 'crispy-bootstrap5==0.7',
+                'django-widget-tweaks==1.5.0',         # Form widget customization
+            ])
+        
+        # Content Management
+        if ('cms' in full_context or 'content' in full_context or 'blog' in full_context):
+            requirements.extend([
+                'django-ckeditor==6.7.0',               # Rich text editor
+                'django-taggit==5.0.1',                 # Tagging system
+                'django-mptt==0.15.0',                  # Tree structures
             ])
         
         # Development and debugging tools
         requirements.extend([
             'django-extensions==3.2.3',        # Management command extensions
             'django-debug-toolbar==4.2.0',     # Debug toolbar
+            'django-silk==5.1.0',              # Profiling and monitoring
         ])
         
         # Testing framework
@@ -1274,15 +1661,18 @@ CORS_ALLOWED_ORIGINS += ["http://localhost:3001"]  # Next.js dev server'''
             requirements.extend([
                 'pytest==7.4.3',
                 'pytest-django==4.7.0',
-                'factory-boy==3.3.0',          # Test data factories
+                'factory-boy==3.3.0',                   # Test data factories
+                'pytest-cov==4.1.0',                    # Coverage reporting
+                'model-bakery==1.17.0',                 # Test data generation
             ])
         
-        # Cloud storage
+        # Cloud storage and CDN
         if ('aws' in full_context or 's3' in full_context or 'cloud' in full_context or
             'storage' in full_context):
             requirements.extend([
                 'boto3==1.34.0',
                 'django-storages==1.14.2',
+                'django-compressor==4.4',               # Asset compression
             ])
         
         # External API integration
@@ -1290,25 +1680,56 @@ CORS_ALLOWED_ORIGINS += ["http://localhost:3001"]  # Next.js dev server'''
             'webhook' in full_context):
             requirements.extend([
                 'requests==2.31.0',
-                'httpx==0.25.2',               # Modern async HTTP client
+                'httpx==0.25.2',                        # Modern async HTTP client
+                'django-webhook==1.3.0',                # Webhook handling
             ])
         
-        # Production deployment packages
-        requirements.extend([
-            'gunicorn==21.2.0',               # WSGI server
-            'whitenoise==6.5.0',              # Static file serving
-        ])
+        # Monitoring and logging
+        if project_plan.get('complexity_level') in ['complex', 'enterprise']:
+            requirements.extend([
+                'sentry-sdk==1.39.1',                   # Error tracking
+                'django-structlog==7.0.0',              # Structured logging
+                'django-health-check==3.17.0',          # Health checks
+            ])
         
         # Security enhancements
-        if 'secure' in full_context or 'ssl' in full_context:
-            requirements.append('django-security==0.17.0')
+        if ('secure' in full_context or 'ssl' in full_context or 
+            project_plan.get('complexity_level') in ['complex', 'enterprise']):
+            requirements.extend([
+                'django-security==0.17.0',
+                'django-csp==3.7',                      # Content Security Policy
+                'django-ratelimit==4.1.0',              # Rate limiting
+            ])
         
         # Data processing and analytics
         if ('data' in full_context or 'analytics' in full_context or 'report' in full_context):
             requirements.extend([
                 'pandas==2.1.4',
-                'django-import-export==3.3.4',  # Data import/export
+                'django-import-export==3.3.4',          # Data import/export
+                'openpyxl==3.1.2',                      # Excel support
+                'reportlab==4.0.8',                     # PDF generation
             ])
+        
+        # Internationalization
+        if ('i18n' in full_context or 'international' in full_context or 'language' in full_context):
+            requirements.extend([
+                'django-modeltranslation==0.18.11',     # Model translation
+                'django-rosetta==0.9.9',                # Translation interface
+            ])
+        
+        # Performance optimization
+        if project_plan.get('complexity_level') in ['complex', 'enterprise']:
+            requirements.extend([
+                'django-cachalot==2.6.1',               # ORM caching
+                'django-compression-middleware==0.4.1', # Response compression
+            ])
+        
+        # Production deployment packages
+        requirements.extend([
+            'gunicorn==21.2.0',                         # WSGI server
+            'whitenoise==6.5.0',                        # Static file serving
+            'python-decouple==3.8',                     # Settings management
+        ])
         
         # Remove duplicates while preserving order
         unique_requirements = []
@@ -1319,6 +1740,61 @@ CORS_ALLOWED_ORIGINS += ["http://localhost:3001"]  # Next.js dev server'''
                 seen.add(req)
         
         return '\n'.join(unique_requirements)
+    
+    def _get_requirements_for_project_type(self, project_type: str) -> List[str]:
+        """Get specific requirements based on project type."""
+        type_requirements = {
+            'blog': [
+                'django-ckeditor==6.7.0',           # Rich text editor
+                'django-taggit==5.0.1',             # Tagging system
+                'django-mptt==0.15.0',              # Comment trees
+                'feedparser==6.0.10',               # RSS feeds
+            ],
+            'ecommerce': [
+                'django-oscar==3.2.2',              # E-commerce framework
+                'stripe==7.8.0',                    # Payment processing
+                'Pillow==10.1.0',                   # Product images
+                'django-storages==1.14.2',          # File storage
+                'reportlab==4.0.8',                 # Invoice generation
+            ],
+            'social': [
+                'django-notifications-hq==1.8.3',  # Notifications
+                'Pillow==10.1.0',                   # Profile images
+                'django-friendship==1.9.6',         # Friend relationships
+            ],
+            'dashboard': [
+                'django-chartjs==2.3.0',            # Charts and graphs
+                'pandas==2.1.4',                    # Data processing
+                'django-import-export==3.3.4',      # Data import/export
+            ],
+            'api': [
+                'djangorestframework==3.15.2',      # REST API
+                'drf-spectacular==0.27.0',          # OpenAPI docs
+                'django-filter==23.4',              # API filtering
+                'django-rest-auth==0.9.5',          # API authentication
+                'django-cors-headers==4.3.1',       # CORS handling
+            ],
+            'portfolio': [
+                'Pillow==10.1.0',                   # Image processing
+                'django-imagekit==5.0.0',           # Image optimization
+                'django-ckeditor==6.7.0',           # Rich content
+                'django-compressor==4.4',           # Asset optimization
+            ],
+            'education': [
+                'django-ckeditor==6.7.0',           # Course content
+                'Pillow==10.1.0',                   # Media files
+                'django-mptt==0.15.0',              # Course structure
+                'reportlab==4.0.8',                 # Certificate generation
+            ],
+            'business': [
+                'django-import-export==3.3.4',      # Data management
+                'openpyxl==3.1.2',                  # Excel support
+                'reportlab==4.0.8',                 # Report generation
+                'django-crispy-forms==2.1',         # Form styling
+            ]
+        }
+        
+        return type_requirements.get(project_type, [])
     
     def _generate_deployment_files(self, project_plan: Dict, project_path: Path) -> List[Dict]:
         """Generate deployment-related files."""
@@ -1444,40 +1920,201 @@ Return ONLY the Markdown content.
        
        return files
    
-    def _generate_code_with_ai(self, prompt: str, callback=None) -> str:
+    def _generate_code_with_ai(self, prompt: str, callback=None, max_retries: int = 3) -> str:
         """
-        Generate code using Claude AI with streaming support.
+        Generate code using Claude AI with streaming support and retry logic.
         This is the core method that makes everything dynamic.
         """
         
-        try:
-            full_content = ""
-            
-            with self.claude_service.client.messages.stream(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=4000,
-                temperature=0.2,
-                messages=[
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"AI generation attempt {attempt + 1}/{max_retries}")
+                full_content = ""
+                
+                # Validate prompt
+                if not prompt or not prompt.strip():
+                    raise ValueError("Empty or invalid prompt provided")
+                
+                with self.claude_service.client.messages.stream(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4000,
+                    temperature=0.2,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt + "\n\nIMPORTANT: Return ONLY the requested code/content, no explanations or markdown blocks."
+                        }
+                    ]
+                ) as stream:
+                    for text in stream.text_stream:
+                        full_content += text
+                        if callback:
+                            callback(text)
+                
+                # Validate response
+                if not full_content or len(full_content.strip()) < 10:
+                    raise ValueError("AI response was too short or empty")
+                
+                # Clean up any markdown code blocks if they exist
+                content = self._clean_code_response(full_content)
+                
+                if not content or len(content.strip()) < 5:
+                    raise ValueError("Cleaned content is empty or too short")
+                
+                logger.debug(f"AI generation successful on attempt {attempt + 1}")
+                return content
+                
+            except Exception as e:
+                last_error = e
+                self._update_stats('retries_used')
+                self._track_error(
+                    'ai_generation_attempt_failed',
+                    str(e),
                     {
-                        "role": "user",
-                        "content": prompt + "\n\nIMPORTANT: Return ONLY the requested code/content, no explanations or markdown blocks."
+                        'attempt': attempt + 1,
+                        'max_retries': max_retries,
+                        'prompt_length': len(prompt) if prompt else 0
                     }
-                ]
-            ) as stream:
-                for text in stream.text_stream:
-                    full_content += text
-                    if callback:
-                        callback(text)
-            
-            # Clean up any markdown code blocks if they exist
-            content = self._clean_code_response(full_content)
-            
-            return content
-            
-        except Exception as e:
-            logger.error(f"Error generating code with AI: {e}")
-            # Return a basic fallback
-            return "# Error generating code. Please regenerate this file."
+                )
+                logger.warning(f"AI generation attempt {attempt + 1} failed: {e}")
+                
+                # Wait before retry (exponential backoff)
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    logger.debug(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+        
+        # All retries failed
+        logger.error(f"AI generation failed after {max_retries} attempts. Last error: {last_error}")
+        
+        # Return intelligent fallback based on prompt content
+        if 'models.py' in prompt.lower():
+            return """# AI generation failed - please regenerate this models file
+from django.db import models
+from django.contrib.auth.models import User
+
+# Add your models here
+"""
+        elif 'views.py' in prompt.lower():
+            return """# AI generation failed - please regenerate this views file
+from django.shortcuts import render
+from django.http import HttpResponse
+
+def home(request):
+    return HttpResponse("Hello World!")
+"""
+        elif 'urls.py' in prompt.lower():
+            return """# AI generation failed - please regenerate this urls file
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('', views.home, name='home'),
+]
+"""
+        else:
+            return f"# AI generation failed after {max_retries} attempts\n# Last error: {last_error}\n# Please regenerate this file manually"
+    
+    def _generate_code_with_ai_streaming(self, prompt: str, callback_func=None, max_retries: int = 2) -> str:
+        """
+        Generate code with real-time streaming updates for the frontend.
+        Uses fewer retries for streaming to maintain responsiveness.
+        """
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"AI streaming generation attempt {attempt + 1}/{max_retries}")
+                full_content = ""
+                
+                # Validate prompt
+                if not prompt or not prompt.strip():
+                    raise ValueError("Empty or invalid prompt provided")
+                
+                # Add callback for real-time updates
+                def stream_callback(text_chunk):
+                    nonlocal full_content
+                    full_content += text_chunk
+                    if callback_func:
+                        try:
+                            callback_func({
+                                'type': 'content_chunk',
+                                'chunk': text_chunk,
+                                'total_length': len(full_content),
+                                'attempt': attempt + 1
+                            })
+                        except Exception as cb_error:
+                            logger.warning(f"Callback error: {cb_error}")
+                
+                with self.claude_service.client.messages.stream(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=4000,
+                    temperature=0.2,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt + "\n\nIMPORTANT: Return ONLY the requested code/content, no explanations or markdown blocks."
+                        }
+                    ]
+                ) as stream:
+                    for text in stream.text_stream:
+                        stream_callback(text)
+                
+                # Validate response
+                if not full_content or len(full_content.strip()) < 10:
+                    raise ValueError("AI response was too short or empty")
+                
+                # Clean up any markdown code blocks if they exist
+                content = self._clean_code_response(full_content)
+                
+                if not content or len(content.strip()) < 5:
+                    raise ValueError("Cleaned content is empty or too short")
+                
+                logger.debug(f"AI streaming generation successful on attempt {attempt + 1}")
+                return content
+                
+            except Exception as e:
+                last_error = e
+                logger.warning(f"AI streaming generation attempt {attempt + 1} failed: {e}")
+                
+                # Notify callback of retry
+                if callback_func and attempt < max_retries - 1:
+                    try:
+                        callback_func({
+                            'type': 'retry',
+                            'attempt': attempt + 1,
+                            'max_retries': max_retries,
+                            'error': str(e)
+                        })
+                    except Exception as cb_error:
+                        logger.warning(f"Retry callback error: {cb_error}")
+                
+                # Wait before retry (shorter for streaming)
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = 1 + attempt  # 1s, 2s
+                    logger.debug(f"Waiting {wait_time}s before streaming retry...")
+                    time.sleep(wait_time)
+        
+        # All retries failed
+        logger.error(f"AI streaming generation failed after {max_retries} attempts. Last error: {last_error}")
+        
+        # Notify callback of final failure
+        if callback_func:
+            try:
+                callback_func({
+                    'type': 'error',
+                    'error': str(last_error),
+                    'attempts': max_retries
+                })
+            except Exception as cb_error:
+                logger.warning(f"Error callback error: {cb_error}")
+        
+        # Return same intelligent fallback as non-streaming version
+        return self._generate_code_with_ai(prompt, max_retries=1)  # Single retry for fallback
     
     def _clean_code_response(self, content: str) -> str:
         """Clean up AI response to get pure code."""
@@ -1503,18 +2140,62 @@ Return ONLY the Markdown content.
         return '\n'.join(clean_lines) if clean_lines else content
     
     def _save_file(self, file_path: Path, content: str) -> Dict:
-        """Save content to file and return file info."""
+        """Save content to file and return file info with error tracking."""
         
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        return {
-            'path': str(file_path),
-            'size': len(content),
-            'type': file_path.suffix
-        }
+        try:
+            self._update_stats('files_attempted')
+            
+            # Validate inputs
+            if not file_path:
+                raise ValueError("File path cannot be empty")
+            
+            if content is None:
+                raise ValueError("Content cannot be None")
+            
+            # Create parent directories
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Validate content before writing
+            if len(content.strip()) == 0:
+                logger.warning(f"Writing empty content to {file_path}")
+            
+            # Write file with error handling
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            # Verify file was written correctly
+            if not file_path.exists():
+                raise FileNotFoundError(f"File was not created: {file_path}")
+            
+            file_size = file_path.stat().st_size
+            if file_size == 0 and len(content) > 0:
+                raise IOError(f"File was created but is empty: {file_path}")
+            
+            self._update_stats('files_succeeded')
+            logger.debug(f"Successfully saved file: {file_path} ({file_size} bytes)")
+            
+            return {
+                'path': str(file_path),
+                'size': len(content),
+                'file_size': file_size,
+                'type': file_path.suffix.lstrip('.') if file_path.suffix else 'txt',
+                'created': datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self._update_stats('files_failed')
+            self._track_error(
+                'file_save_error',
+                str(e),
+                {
+                    'file_path': str(file_path),
+                    'content_length': len(content) if content else 0,
+                    'file_type': file_path.suffix if file_path else 'unknown'
+                }
+            )
+            
+            # Re-raise the exception after tracking
+            raise Exception(f"Failed to save file {file_path}: {str(e)}")
     
     def _generate_standard_django_file(self, file_type: str, project_name: str) -> str:
         """Generate standard Django files like wsgi.py and asgi.py."""
@@ -2101,6 +2782,94 @@ class {app_name.capitalize()}Config(AppConfig):
     name = '{app_name}'
     verbose_name = '{app_name.replace("_", " ").title()}'
 """
+
+    def _create_minimal_config_files(self, project_path: Path) -> List[str]:
+        """
+        Create minimal configuration files when primary generation fails.
+        This ensures the project has at least the basic files needed to run.
+        """
+        try:
+            logger.info("Creating minimal configuration files as fallback...")
+            files_created = []
+            
+            # Create minimal requirements.txt
+            minimal_requirements = """Django>=4.2,<5.0
+python-dotenv>=1.0.0
+Pillow>=10.0.0
+"""
+            requirements_file = project_path / 'requirements.txt'
+            self._save_file(requirements_file, minimal_requirements)
+            files_created.append(str(requirements_file))
+            
+            # Create minimal .env file
+            minimal_env = """DEBUG=True
+SECRET_KEY=django-insecure-change-this-in-production
+DATABASE_URL=sqlite:///db.sqlite3
+ALLOWED_HOSTS=localhost,127.0.0.1
+"""
+            env_file = project_path / '.env'
+            self._save_file(env_file, minimal_env)
+            files_created.append(str(env_file))
+            
+            # Create minimal Dockerfile
+            minimal_dockerfile = """FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+"""
+            dockerfile = project_path / 'Dockerfile'
+            self._save_file(dockerfile, minimal_dockerfile)
+            files_created.append(str(dockerfile))
+            
+            # Create minimal .gitignore
+            minimal_gitignore = """__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+.DS_Store
+.vscode/
+.idea/
+
+db.sqlite3
+.env
+media/
+staticfiles/
+"""
+            gitignore_file = project_path / '.gitignore'
+            self._save_file(gitignore_file, minimal_gitignore)
+            files_created.append(str(gitignore_file))
+            
+            logger.info(f"Created {len(files_created)} minimal configuration files")
+            return files_created
+            
+        except Exception as e:
+            logger.error(f"Failed to create minimal config files: {e}")
+            return []
 
 
     # Helper function to test the generator

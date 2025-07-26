@@ -31,6 +31,8 @@ interface PaymentStatus {
   amount_received?: string;
   expires_at?: string;
   is_expired: boolean;
+  webhook_received?: boolean;
+  confirmation_source?: 'webhook' | 'api_poll';
 }
 
 const CryptoPaymentWidget: React.FC<CryptoPaymentWidgetProps> = ({
@@ -69,8 +71,21 @@ const CryptoPaymentWidget: React.FC<CryptoPaymentWidgetProps> = ({
         const statusData = response.data.payment as PaymentStatus;
         setStatus(statusData);
         
+        // CRITICAL FIX: Only trigger completion for webhook-confirmed payments
         if (statusData.status === 'completed') {
-          setTimeout(() => onPaymentComplete(), 2000);
+          const isWebhookConfirmed = statusData.webhook_received;
+          const confirmationSource = statusData.confirmation_source;
+          
+          console.log(`Crypto payment status check: ${statusData.status}, webhook_received: ${isWebhookConfirmed}, source: ${confirmationSource}`);
+          
+          // Only auto-complete if confirmed by webhook OR if explicitly confirmed by API with high confidence
+          if (isWebhookConfirmed || confirmationSource === 'webhook') {
+            console.log('✅ Crypto payment confirmed by webhook - triggering completion');
+            setTimeout(() => onPaymentComplete(), 2000);
+          } else {
+            console.log('⏳ Crypto payment confirmed by API polling only - waiting for webhook confirmation');
+            // Don't auto-complete yet, keep polling for webhook confirmation
+          }
         } else if (statusData.status === 'failed' || statusData.is_expired) {
           onPaymentFailed(statusData.is_expired ? 'Payment expired' : 'Payment failed');
         }
