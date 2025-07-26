@@ -6,7 +6,7 @@ from django.urls import reverse
 from .models import (
     Project, ProjectFile, ChatThread, ChatMessage, CommandExecution,
     UserProfile, ProjectSession, ProjectTemplate, ErrorLog, UsageAnalytics,
-    BillingPlan, UserSubscription, TokenUsage, BillingInvoice
+    BillingPlan, UserSubscription, TokenUsage, BillingInvoice, Payment,PaymentMethod,PaymentWebhook
 )
 
 # Unregister the default User admin to register our custom one
@@ -643,3 +643,7 @@ class BillingInvoiceAdmin(admin.ModelAdmin):
         return "N/A"
     paid_date_display.admin_order_field = 'paid_date'
     paid_date_display.short_description = 'Paid Date'
+
+admin.site.register(Payment)
+admin.site.register(PaymentMethod)
+admin.site.register(PaymentWebhook)

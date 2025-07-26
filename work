@@ -1,0 +1,1978 @@
+from itertools import product
+from urllib import response
+from django.shortcuts import render, get_object_or_404, redirect
+from .models import *
+from datetime import datetime, timedelta
+from django.http import JsonResponse,HttpResponse
+from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import User
+from django.contrib import messages
+from django.http import HttpResponseRedirect
+from django.contrib.auth import authenticate, login, get_user_model
+from .validation import *
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+from django.contrib.auth.decorators import user_passes_test
+from django.views.decorators.http import require_POST
+from .forms import *
+from django.views.decorators.csrf import csrf_exempt
+# from pypaystack import Transaction
+import requests
+from django.conf import settings
+from django.db.models import Count
+from django.contrib.auth import logout
+from .decorators import *
+from django.http import QueryDict
+from django.utils.html import escape
+import smtplib
+from email.message import EmailMessage
+import ssl
+from django.utils.safestring import mark_safe
+from unipayment import UniPaymentClient, CreateInvoiceRequest
+from django.db.models import Q
+from django.core.serializers import serialize
+import uuid
+from django.template.loader import render_to_string
+from django.contrib.sites.shortcuts import get_current_site
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import EmailMessage
+from .token import account_activation_token
+
+client_id='bc074293-546f-4266-8daf-273330313212'
+client_secret='CLBfKr9tcwCCwV2ctTSY7167rGb3q53bR'
+
+
+def activate(request, uidb64, token):
+    User = get_user_model()
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except:
+        user = None
+
+    if user is not None and account_activation_token.check_token(user, token):
+        user.is_active = True
+        user.save()
+
+        messages.success(request, "Thank you for your email confirmation. Now you can login your account.")
+        return redirect('login')
+    else:
+        messages.error(request, "Activation link is invalid!")
+
+    return redirect('home')
+
+
+
+def activate_email(request, user,username, to_email):
+    mail_subject = "Activate your user account."
+    message = render_to_string("template_activate_account.html", {
+        'user': username,
+        'domain': get_current_site(request).domain,
+        'uid': urlsafe_base64_encode(force_bytes(user.pk)),
+        'token': account_activation_token.make_token(user),
+        "protocol": 'https' if request.is_secure() else 'http'
+    })
+    email = EmailMessage(mail_subject, message, to=[to_email])
+    if email.send():
+        messages.success(request, f'Dear <b>{user}</b>, please go to you email <b>{to_email}</b> inbox and click on \
+                received activation link to confirm and complete the registration. <b>Note:</b> Check your spam folder.')
+    else:
+        messages.error(request, f'Problem sending email to {to_email}, check if you typed it correctly.')
+
+def generate_order_id():
+    # Generate a UUID and convert it to a string, removing dashes
+    order_id = str(uuid.uuid4().hex)[:12]
+    return order_id
+
+def is_instructor(user):
+    return hasattr(user, 'instructorprofile') and user.instructorprofile.active
+
+
+def calculate_total_time(time_strings):
+    total_seconds = 0
+
+    for time_str in time_strings:
+        # Use try-except block to handle different time formats
+        try:
+            # Parse the time string and convert to timedelta
+            time_parts = [int(part) for part in time_str.split(":")]
+            time_delta = timedelta(hours=time_parts[-3], minutes=time_parts[-2], seconds=time_parts[-1])
+
+            # Convert timedelta to total seconds and add to the total
+            total_seconds += time_delta.total_seconds()
+        except ValueError:
+            print(f"Invalid time format: {time_str}")
+
+    # Convert the total seconds to hours, minutes, and seconds
+    total_time = str(timedelta(seconds=total_seconds))
+
+    return total_time
+
+
+def get_user_purchased_courses(user):
+    return set(UserCourse.objects.filter(user=user).values_list('course', flat=True))
+
+def calculate_total_time(time_list):
+    total_time = timedelta()
+
+    for time_str in time_list:
+        time_components = [int(x) for x in time_str.split(':')]
+        total_time += timedelta(hours=time_components[-3] if len(time_components) == 3 else 0,
+                                minutes=time_components[-2],
+                                seconds=time_components[-1] if len(time_components) == 3 else time_components[-1])
+
+    return total_time
+
+
+def get_videos_for_course(course_slug):
+    course = Course.objects.get(slug=course_slug)
+    
+    # Fetch all video sections for the course
+    sections = VideoSection.objects.filter(course=course)
+
+    # Initialize an empty list to store all videos
+    all_videos = []
+
+    # Iterate through each section and get videos
+    for section in sections:
+        videos_in_section = Video.objects.filter(section=section)
+        all_videos.extend(videos_in_section)
+    for video in all_videos:
+        _ = video.youtubeDutation 
+
+    return all_videos
+
+def get_videos_by_section(course_slug):
+    course = Course.objects.get(slug=course_slug)
+
+    # Fetch all video sections for the course
+    sections = VideoSection.objects.filter(course=course)
+
+    # Initialize an empty dictionary to store content (videos and assignments) by section
+    content_by_section = {}
+
+    # Iterate through each section and get videos and assignments
+    for section in sections:
+        videos_in_section = Video.objects.filter(section=section)
+        assignments_in_section = Assignment.objects.filter(section=section)
+        print(assignments_in_section)
+        # Add videos and assignments to the dictionary
+        content_by_section[section] = {
+            'videos': videos_in_section,
+            'assignments': assignments_in_section
+        }
+
+    return content_by_section
+
+@login_required
+def get_notifications(request):
+    notifications = Notification.objects.filter(student=request.user, is_read=False)
+    for notification in notifications:
+        notification.is_read = True
+        notification.save()
+
+    all_notifications = Notification.objects.filter(student=request.user)
+
+    notification_data = []
+    for notification in all_notifications:
+        print(notification.course.slug)
+        notification_data.append({
+            'instructor_name': f"{notification.instructor.user.first_name} {notification.instructor.user.last_name}",
+            'instructor_image': notification.instructor.imageURL,
+            'course_name': notification.course.name,
+            'slug': notification.course.slug,
+            'timestamp': notification.timestamp,
+        })
+
+    return JsonResponse({'notifications': notification_data})
+
+
+def notification(request):
+    if request.user.is_authenticated:
+        notifications = Notification.objects.filter(student=request.user, is_read=False)
+        for notification in notifications:
+            notification.is_read = True
+            notification.save()
+
+        # Fetch all notifications for the logged-in student
+        all_notifications = Notification.objects.filter(student=request.user)
+        print(len(all_notifications))
+        return JsonResponse({'notification_count': len(all_notifications)})
+    else:
+        return JsonResponse({'notification_count': 0})
+
+# Home view - Displays a limited number of courses on the home page
+def home(request):
+    # Fetch a few instructor profiles for display
+    
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    
+    # Check if the user is authenticated to show their cart information
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    
+    # Fetch a limited number of courses and categories
+    courses = Course.objects.filter(active=True).annotate(num_purchases=Count('usercourse')).order_by('-num_purchases')[:6]
+
+    # Filter newest courses by is_active
+    newest_courses = Course.objects.filter(active=True).order_by('-date')
+    categories = Category.objects.all()
+    
+    _instructors = InstructorProfile.objects.annotate(courses_count=Count('course'), enrolled_students_count=Count('course__usercourse__user', distinct=True)).order_by('-courses_count')
+
+    # Create a list to store each instructor along with their courses count
+    instructors_with_courses_count = []
+
+    # Iterate over each instructor
+    for instructor in _instructors:
+        # Get the count of courses created by the instructor
+        courses_count = Course.objects.filter(user=instructor).count()
+
+        # Append the instructor and courses count to the list
+        instructors_with_courses_count.append({
+            'instructor': instructor,
+            'courses_count': courses_count,
+        })
+
+    __instructors__ = InstructorProfile.objects.annotate(
+        subscriber_count=Count('subscribers'),
+        purchased_courses_count=Count('user__usercourse')
+    )
+
+    # Sort instructors based on the total count (subscribers + purchased courses)
+    __instructors__ = sorted(
+        __instructors__,
+        key=lambda instructor: instructor.subscriber_count + instructor.purchased_courses_count,
+        reverse=True
+    )
+
+    # Get the most famous instructor (first in the sorted list)
+    most_famous_instructor = __instructors__[0] if __instructors__ else None
+    most_famous_instructor_count = []
+    courses_count = Course.objects.filter(user=instructor).count()
+
+        # Append the instructor and courses count to the list
+    most_famous_instructor_count.append({
+        'instructor': instructor,
+        'courses_count': courses_count,
+    })
+
+    enrolled_students_count = most_famous_instructor.subscriber_count + most_famous_instructor.purchased_courses_count
+    courses_instructor = Course.objects.filter(user=most_famous_instructor).count()
+    enrolled_student = len(UserCourse.objects.filter(course__user=most_famous_instructor).values('user__username').distinct())
+    print(enrolled_student)
+
+    
+
+    context = {
+        'courses': courses,
+        'newest_courses': newest_courses,
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'categories': categories,
+        'instructors_with_courses_count': instructors_with_courses_count,
+        'title': 'Home',
+        'most_famous_instructor':most_famous_instructor,
+        'courses_instructor': courses_instructor,
+        'enrolled_student': enrolled_student,
+    }
+    
+    # Render the home page
+    return render(request, 'index.html', context)
+
+
+# All Courses view - Displays all available courses
+def all_courses(request):
+    # Fetch all categories and a few instructor profiles
+    categories = Category.objects.all()
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    
+    # Check if the user is authenticated to show their cart information
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    
+    # Fetch all available courses
+    courses = Course.objects.filter(active= True)
+    
+    # Prepare context to pass to the template
+    context = {
+        'courses': courses,
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'categories': categories,
+        'title': 'Courses'
+    }
+    
+    # Render the courses page
+    return render(request, 'courses.html', context)
+
+
+# Course Details view - Displays details of a specific course
+def course_details(request, slug):
+    # Fetch all categories, a few instructor profiles, and the current user
+    categories = Category.objects.all()
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    
+    # Check if the user is authenticated to show their cart information
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    # Fetch all courses and the specific course based on the slug
+    courses = Course.objects.all()
+    course = get_object_or_404(Course, slug=slug)
+    if user.is_authenticated:
+        course.view_count += 1
+        course.save()
+        
+    course_comment = CourseComment.objects.filter(course = course)
+    # Get video details for the course
+    time_strings = []
+    videos = get_videos_for_course(slug)
+    video_length = (len(videos))
+    
+    for x in videos:
+        time_strings.append(str(x.youtubeDutation))
+    total_time = calculate_total_time(time_strings)
+    videos_by_section = get_videos_by_section(slug)
+    if request.method == 'POST':
+        print(request.POST)
+        text = request.POST.get('text')
+        if text == '':
+            return JsonResponse({'message': 'Input a Comment'})
+        else:
+            CourseComment.objects.create(course = course, user= request.user.studentprofile, text = text)
+            try:
+                subject = f"A comment stundent commented on your course {course.name}"
+                body = f"""
+                {text}
+                    
+                """
+                print(request.user.email)
+                email_sender = 'sammiykay@gmail.com'
+                email_password = 'umzuvngyjdpwabpy'
+                em = EmailMessage()
+                em['From'] = request.user.email
+                em['To'] = course.user.user.email
+                em['Subject'] = subject
+                em.set_content(body)
+                context = ssl.create_default_context()
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
+                    smtp.login(email_sender, email_password)
+                    smtp.sendmail(request.user.email, course.user.user.email, em.as_string())
+            except:
+                pass
+    # Prepare context to pass to the template
+    user_courses = UserCourse.objects.filter(course=course)
+
+    # Get the users enrolled in the course
+    enrolled_students = len([user_course.user for user_course in user_courses])
+    student_learning = StudentLearning.objects.filter(course=course)
+    print(videos_by_section)
+    context = {
+        'enrolled_students': enrolled_students,
+        'videos_by_section': videos_by_section,
+        'course': course,
+        'video_length': video_length,
+        'cart_total': cart_total,
+        'total_time': total_time,
+        'categories': categories,
+        'course_comment': course_comment,
+        'instructors': instructor_profile,
+        'title': f'{course.name}',
+        'student_learning': student_learning
+    }
+    
+    # Render the course details page
+    return render(request, 'course_details.html', context)
+
+
+# Login view - Handles user login
+def login_user(request):
+    # Check if the user is already authenticated
+    if request.user.is_authenticated:
+        messages.success(request, 'You are logged in already')
+        return HttpResponseRedirect('/')
+    elif request.method == 'POST':
+        # Handle user login with appropriate messages for different scenarios
+        username = request.POST.get('username').lower()
+        username = username.lower()
+        password = request.POST.get('password')
+        if '@' in username:
+            email_database = User.objects.filter(email=username).exists()
+            if email_database:
+                email_database = User.objects.get(email=username)
+                username = email_database.username
+                user = authenticate(request, username=username, password=password)
+                if user is not None:
+                    login(request, user)
+                    message = {'message': 'Login successful'}
+                    next_url = request.POST.get('next')
+                    if next_url:
+                        return JsonResponse({'url': f'{next_url}'})
+                    else:
+                        return JsonResponse({'url': '/'})
+
+            else:
+                message = {'message': 'Username Or Email Does Not Exist'}
+        if username == '' or password == '':
+            message = {'message': 'Please Fill All The Input Fields'}
+            return JsonResponse(message)
+        if not User.objects.filter(username=username).exists():
+            message = {'message': 'Username Or Email Does Not Exist'}
+            return JsonResponse(message)
+        user = authenticate(request, username=username, password=password)
+        if user is not None:
+            login(request, user)
+            message = {'message': 'Login successful'}
+            next_url = request.POST.get('next')
+            if next_url:
+                return JsonResponse({'url': f'{next_url}'})
+            else:
+                return JsonResponse({'url': '/'})
+
+            return JsonResponse(message)
+        else:
+            message = {'message': 'Incorrect Password'}
+            return JsonResponse(message) 
+    return render(request,'login.html', context={'title': 'Login'})
+
+
+# Register view - Handles user registration
+def register(request):
+    # Check if the user is already authenticated
+    if request.user.is_authenticated:
+        messages.success(request, 'You are logged in already')
+        return HttpResponseRedirect('/')
+    elif request.method == 'POST':
+        # Handle user registration with appropriate messages for different scenarios
+        username = request.POST.get('username').lower()
+        username = username.lower()
+        email = request.POST.get('email').lower()
+        password = request.POST.get('password')
+        if User.objects.filter(username=username).exists():
+            message = {'message': 'Username Already Exist'}
+            return JsonResponse(message)
+        if email == '' or username == '' or password == '':
+            message = {'message': 'Please Fill All The Input Fields'}
+            return JsonResponse(message)
+        elif User.objects.filter(email=email).exists():
+            message = {'message': 'Email Already Exist'}
+            return JsonResponse(message)
+        elif not is_valid_password(password):
+            message = {'message': 'Enter a valid password please'}
+            return JsonResponse(message)
+        elif not is_valid_email(email):
+            message = {'message': 'Enter a valid Email please'}
+            return JsonResponse(message)
+        password = make_password(password)
+        register_user = User.objects.create(username=username, password=password, email=email)
+        register_user.is_active = False
+        register_user.save()
+        user = StudentProfile()
+        user.user = register_user
+        user.save()
+        activate_email(request, register_user, username, email)
+        return HttpResponseRedirect('/register')
+    else:
+        pass
+        # form = CreateUserForm()
+
+    return render(request,'register.html')
+
+
+def register_instructor(request):
+    # Check if the user is already authenticated
+    if request.user.is_authenticated:
+        messages.success(request, 'You are logged in already')
+        return HttpResponseRedirect('/')
+    elif request.method == 'POST':
+        # Handle user registration with appropriate messages for different scenarios
+        username = request.POST.get('username')
+        username = username.lower()
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        if User.objects.filter(username=username).exists():
+            message = {'message': 'Username Already Exist'}
+            return JsonResponse(message)
+        if email == '' or username == '' or password == '':
+            message = {'message': 'Please Fill All The Input Fields'}
+            return JsonResponse(message)
+        elif User.objects.filter(email=email).exists():
+            message = {'message': 'Email Already Exist'}
+            return JsonResponse(message)
+        elif not is_valid_password(password):
+            message = {'message': 'Enter a valid password please'}
+            return JsonResponse(message)
+        elif not is_valid_email(email):
+            message = {'message': 'Enter a valid Email please'}
+            return JsonResponse(message)
+        password = make_password(password)
+        register_user = User.objects.create(username=username, password=password, email=email)
+        user = InstructorProfile()
+        user.user = register_user
+        user.save()
+        # register_user = authenticate(request, username=username, password=password)
+        print(register_user)
+        if register_user is not None:
+            login(request, register_user)
+            return HttpResponseRedirect('/settings')
+    else:
+        pass
+        # form = CreateUserForm()
+
+    return render(request,'register_instructor.html')
+
+
+
+def instructor_registrtion(request):
+    register_user = User.objects.create(username='segun006', password='bezalglobal.com', email='ogunlaeem@gmail.com')
+    InstructorProfile.objects.create(user=register_user)
+    return HttpResponse(request, 'Done')
+
+
+@csrf_exempt
+def notify_url_handler(request):
+        # Retrieve data from the incoming request
+    if request.method == 'POST':
+    
+        data = json.loads(request.body.decode('utf-8'))
+        print(data)
+            # You can now handle the data as per your requirements
+            # For example, log the data or update the order status in your database
+
+        #     # Your business logic here...
+
+        #     # Respond to the gateway with a success message
+        #     response_data = {'status': 'success'}
+        #     return HttpResponse(json.dumps(data), content_type='application/json')
+
+        # # If the request method is not POST, respond with a bad request
+        # return HttpResponse(status=400)
+        notify = data
+        client = UniPaymentClient(client_id, client_secret)
+        import smtplib
+        from email.message import EmailMessage
+        import ssl
+        subject = "Online Course Detail"
+        body = f"""
+        Your Purchahe of
+        {notify}
+            
+        """
+        email_sender = 'sammiykay@gmail.com'
+        email_password = 'umzuvngyjdpwabpy'
+        em = EmailMessage()
+        em['From'] = email_sender
+        em['To'] = 'okesamson11@gmail.com'
+        em['Subject'] = subject
+        em.set_content(body)
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
+            smtp.login(email_sender, email_password)
+            smtp.sendmail(email_sender, 'okesamson11@gmail.com', em.as_string())
+        # try:
+        check_ipn_response = client.check_ipn(notify)
+        if check_ipn_response.code == 'OK':
+            # ipn is valid, we can handel status
+            if notify['status'] == 'Confirmed' or notify['status'] == 'Complete':
+                # payment is confirmed, we can process order here
+                payment = Payment.objects.filter(
+                    order_id= notify['invoice_id'] 
+                )
+                print(payment)
+                for p in payment:
+                    print(p)
+
+                    p.status = 'Success' # Set status to Success for successful payment
+                    p.save()
+                return JsonResponse({'message': 'Success'})
+                
+                    
+            elif notify['status'] == 'Expired':
+                payment = Payment.objects.filter(
+                    order_id= notify['invoice_id']  # Set status to True for expired payment
+                )
+                for p in payment:
+                    p.status = notify['status']
+                    p.save()
+                return JsonResponse({'message': 'Success'})
+                
+        else:
+            # ipn is not valid
+            pass
+        return JsonResponse({'message': ''})
+        # except:
+        #     print('Error')
+
+
+@login_required
+def view_cart(request):
+    user = request.user
+    cart_items = Cart.objects.filter(user=user)
+    length = len(cart_items)
+    discounted_price = 0 
+    for c in cart_items:
+        discounted_price += c.course.get_discounted_price
+    original_price = 0
+    for c in cart_items:
+        original_price += c.course.price
+    discount = round(original_price - discounted_price,2)
+    context = {'cart_items': cart_items, 
+               'total_cart_dprice': discount,
+               'total_cart_oprice': original_price,
+               'total_cart_price': round(discounted_price,2),
+                'title': 'Cart',
+                'length':length}
+    return render(request, 'cart.html', context)
+
+@login_required
+def add_to_cart(request):
+    user = request.user
+    try:
+        if request.method == 'POST':
+            course_id = request.POST.get('course_id')
+            print(f"Course id = {course_id} and type = {type(course_id)}")
+            course_id = int(course_id)
+            course = get_object_or_404(Course, pk=course_id)
+        # Check if the course is already in the user's cart
+            existing_cart_item = Cart.objects.filter(user=user, course=course).first()
+            print(existing_cart_item)
+            try:
+                course = Course.objects.get(id=course_id)
+            except Course.DoesNotExist:
+                return JsonResponse({'error': 'Course not found'}, status=404)
+
+            is_purchased = UserCourse.objects.filter(user=user, course=course).exists()
+            is_purchased = Payment.objects.filter(
+                user=user,
+                course=course,
+                status='Success'
+            ).exists()
+
+            if is_purchased:
+                return JsonResponse({'message': 'You have purchased this course already'})
+            
+        
+            if existing_cart_item is not None:
+                return JsonResponse({'error': 'Course Already Exist in cart'})
+                # If the course is in the cart, do nothing (quantity remains at 1)
+                pass
+            else:
+                # If the course is not in the cart, add it with a quantity of 1
+                Cart.objects.create(user=user, course=course)
+                return JsonResponse({'success': 'Course Added To Cart Successfully'})
+    except Exception as e:
+        return JsonResponse({'error': str(e)})
+
+
+@login_required
+def remove_to_cart(request, course_id):
+    user = request.user
+    # try:
+    if request.method == 'GET':
+        print(f"Course id = {course_id} and type = {type(course_id)}")
+        course_id = int(course_id)
+
+        print('sam')
+
+        existing_cart_item = Cart.objects.get(user=user, id=course_id)
+        print('sam')
+        print(existing_cart_item)
+        if existing_cart_item:
+            existing_cart_item.delete()
+            return JsonResponse({'success': f'Course {existing_cart_item} has been siccessfully removed'})
+        else:
+            return JsonResponse({'Error': 'Does not exist in cart'})
+    # except Exception as e:
+    #     return JsonResponse({'error': str(e)})
+# Remove course from cart view
+
+@login_required
+def get_cart_update(request):
+    user = request.user
+    cart_items = Cart.objects.filter(user=user)
+    length = len(cart_items)
+    discounted_price = 0 
+    for c in cart_items:
+        discounted_price += c.course.get_discounted_price
+    original_price = 0
+    for c in cart_items:
+        original_price += c.course.price
+    discount = round(original_price - discounted_price,2)
+    context = {'total_cart_dprice': discount,
+               'total_cart_oprice': original_price,
+               'total_cart_price': round(discounted_price,2),
+                'length':length
+                }
+    return JsonResponse(context, safe=False)
+
+
+
+@user_passes_test(is_instructor)
+def create_new_course(request):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    if request.method == "POST":
+        course_title = request.POST.get('course_title')
+        description = request.POST.get('description')
+        student_learning = request.POST.get('student_learning')
+        requirements = request.POST.get('requirements')
+        course_level = request.POST.getlist('course_level')
+        audio_language = request.POST.getlist('audio_language')
+        caption = request.POST.getlist('caption')
+        category_name = request.POST.get('category')
+        category, created = Category.objects.get_or_create(name=category_name)
+        # Create a new course instance
+        course = Course.objects.create(
+            user= user.instructorprofile,
+            name=course_title,
+            description=description,
+            category=category  # Assign the category to the course
+        )
+        for i in audio_language:
+            Audio.objects.create(course=course, audio_language=i)
+
+
+        for i in caption:
+            Caption.objects.create(course=course, _caption=i)
+
+        requirements_list = requirements.split('\r\n')
+        for i in requirements_list:
+            Prerequisite.objects.create(course=course, description=i)
+    
+        student_learning_list = student_learning.split('\r\n')
+        print(student_learning_list)
+        for i in student_learning_list:
+            StudentLearning.objects.create(course=course, description=i)
+
+        for level in course_level:
+            CourseLevel.objects.create(course=course, level = level)
+        return HttpResponseRedirect(f'/course/edit/{course.id}/curriculum')
+    form = CourseForm()
+    context = {
+        'cart_length': len(cart),
+        'form': form,
+        'title': 'Create Course'
+        }
+    return render(request, 'create_new_course.html', context)    
+
+
+@user_passes_test(is_instructor)
+def edit_course(request, course_id):
+    user = request.user
+    instructor_profile = request.user.instructorprofile
+    print(instructor_profile)
+    cart = Cart.objects.filter(user = user)
+    course = Course.objects.get(id = course_id)
+    student_learning = StudentLearning.objects.filter(course=course)
+    prerequisite = Prerequisite.objects.filter(course=course)
+    if request.method == "POST":
+        # print(request.POST)
+        course_title = request.POST.get('course_title')
+        description = request.POST.get('description')
+        student_learning = request.POST.get('student_learning')
+        requirements = request.POST.get('requirements')
+        course_level = request.POST.getlist('course_level')
+        audio_language = request.POST.getlist('audio_language')
+        caption = request.POST.getlist('caption')
+        category_name = request.POST.get('category')
+        category, created = Category.objects.get_or_create(name=category_name)
+        # Create a new course instance
+        print(course_title)
+        course.name=course_title,
+        course.description=description,
+        course.category=category  # Assign the category to the course
+        course.save()
+        
+        requirements_list = requirements.split('\r\n')
+        cleaned_list = [value.strip('\t') for value in requirements_list]
+        for i in cleaned_list:
+            old = Prerequisite.objects.get(course=course, description=i)
+            old.description = i
+            old.save()
+
+        student_learning_list = student_learning.split('\r\n')
+        cleaned_list = [value.strip('\t') for value in student_learning_list]
+        for i in cleaned_list:
+            if i == '':
+                break
+            old = StudentLearning.objects.get(course=course, description=i)
+            old.description = i
+            old.save()
+        return HttpResponseRedirect(f'/course/edit/{course.id}/curriculum')
+    form = CourseForm(instance=course)
+    context = {
+        'prerequisite':prerequisite,
+        'student_learning':student_learning,
+        'course' : course,
+        'cart_length': len(cart),
+        'form': form,
+        'title': 'Edit Course'
+        }
+    return render(request, 'edit_course.html', context)    
+
+
+@user_passes_test(is_instructor)
+def curriculum(request, course_id):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    user = request.user.instructorprofile
+    course = get_object_or_404(Course, id= course_id, user= user)
+    if request.method == "POST":
+        title = request.POST.get('title')
+        VideoSection.objects.create(course=course, title =title)
+        return HttpResponseRedirect(f'/course/edit/{course.id}/curriculum/')
+    section = VideoSection.objects.filter(course=course)
+    context = {
+        'course':course,
+        'section':section,
+        'cart_length': len(cart)
+    }
+    return render(request, 'create_new_course_curriculum.html', context)    
+
+
+@user_passes_test(is_instructor)
+def add_lecture(request, course_id, curriculum_id):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    user = request.user.instructorprofile
+    course = get_object_or_404(Course, id= course_id, user= user)
+    video_section = get_object_or_404(VideoSection, pk=curriculum_id)
+    if request.method == "POST":
+        video_id = request.POST.get('video_id')
+        title = request.POST.get('title')
+
+        Video.objects.create(section = video_section, title = title, video_id = video_id)
+        return HttpResponseRedirect(f'/course/edit/{course.id}/curriculum/{curriculum_id}')
+    assignments = Assignment.objects.filter(section=curriculum_id)
+    videos = Video.objects.filter(section=curriculum_id)
+    context = {
+        'assignments': assignments,
+        'videos': videos,
+        's': video_section,
+        'course':course,
+        'cart_length':len(cart),
+        }
+    return render(request, 'create_new_course_add_lectures.html', context)    
+
+
+@user_passes_test(is_instructor)
+def add_assignment(request, course_id, curriculum_id):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    user = request.user.instructorprofile
+    course = get_object_or_404(Course, id= course_id, user= user)
+    video_section = get_object_or_404(VideoSection, pk=curriculum_id)
+    if request.method == "POST":
+        print(request.POST)
+        file_txt = request.FILES.get('file_txt')
+        title = request.POST.get('title')
+
+        Assignment.objects.create(section = video_section, title = title, file_txt = file_txt)
+        return HttpResponseRedirect(f'/course/edit/{course.id}/curriculum/{curriculum_id}')
+
+    assignments = Assignment.objects.filter(section=curriculum_id)
+    context = {
+        'assignments': assignments,
+        's': video_section,
+        'course':course,
+        'cart_length':len(cart),
+        }
+    return render(request, 'create_new_course_add_lectures.html', context)    
+
+
+
+
+@user_passes_test(is_instructor)
+def course_media(request, course_id):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    user = request.user.instructorprofile
+    course = get_object_or_404(Course, id= course_id, user= user)
+    if request.method == "POST":
+        intro = request.POST.get('youtube_link')
+        thumbnail = request.FILES.get('thumbnail')
+        if thumbnail:
+            course.thumbnail = thumbnail
+        course.intro = intro
+        course.save()
+        return redirect(f'/course/edit/{course.id}/price')
+    print(course.thumbnail)
+    return render(request, 'create_new_course_media.html', {'course': course, 'cart_length': len(cart)})    
+
+
+@user_passes_test(is_instructor)
+def course_price(request, course_id):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    user = request.user.instructorprofile
+    course = get_object_or_404(Course, id= course_id, user= user)
+    print('samw')
+    if request.method == "POST":
+        print(request.POST)
+        price = request.POST.get('price')
+        discount = request.POST.get('discount')
+        course.price = float(price)
+        course.discount = float(discount)
+        course.save()
+        messages.success(request, 'Course submitted waiting for admin review')
+        return HttpResponseRedirect('/instructor-courses/')
+        # return JsonResponse({'message': 'Course In Review'})
+    return render(request, 'create_new_course_price.html', {'course': course, 'cart_length': len(cart)})    
+    
+@user_passes_test(is_instructor)
+def instructor_course(request):
+    user = request.user
+    cart = Cart.objects.filter(user = user)
+    user = request.user.instructorprofile
+    courses = Course.objects.filter(user=user) 
+    discount_courses = Course.objects.filter(user=user, discount__gt=0)
+
+    # Get all courses created by the user
+    created_courses = Course.objects.filter(user=user)
+    user = request.user
+    # Get all UserCourse instances for the specified user
+    user_courses = UserCourse.objects.filter(user=user)
+    purchased_courses = [user_course.course for user_course in user_courses]
+    print("Courses purchased by the user:")
+    for purchased_course in purchased_courses:
+        print(f"Course Name: {purchased_course.name}")
+        # Add any other information you want to display about the purchased course
+        print("\n")
+    # courses = Course.objects.filter(user=user, is_preview = True)
+    categories = Category.objects.all()
+    cart_length = len(cart)
+    context = {
+        'courses': courses,
+        'discount_courses': discount_courses,
+        'categories': categories,
+        'purchased_courses': purchased_courses,
+        'cart_length': cart_length,
+        'title': 'Instructor course'
+    } 
+    return render(request, 'instructor_courses.html', context)    
+
+@user_passes_test(is_instructor)
+@require_POST
+def delete_curriculum(request, curriculum_id):
+    curriculum = get_object_or_404(VideoSection, id=curriculum_id)
+    curriculum.delete()
+    return JsonResponse({'message': 'Curriculum deleted successfully'})
+
+
+@user_passes_test(is_instructor)
+def delete_course(request, course_id):
+    print('sam')
+    course = get_object_or_404(Course, id=course_id)
+    course.delete()
+    return JsonResponse({'message': 'Course deleted successfully'})
+
+
+@login_required
+def get_all_cart(request):
+    user = request.user
+    cart_items = Cart.objects.filter(user=user)
+    return JsonResponse({'message': len(cart_items)}, safe=False)
+
+
+def instuctorprofile(request, user_id):
+    user = request.user
+    try:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    except:
+        cart_total = 0
+
+    user = User.objects.get(id = user_id)
+    instructor_profile = get_object_or_404(InstructorProfile,user=user)
+    instructor_profiles = InstructorProfile.objects.all()[:3]
+    categories = Category.objects.all()
+
+    # Get all enrolled students for the current instructor
+    enrolled_students = UserCourse.objects.filter(course__user=user.instructorprofile).values('user__username').distinct()
+    enrolled_length_student = len(enrolled_students)
+    courses = Course.objects.filter(user = user.instructorprofile)
+    course_length = len(courses)
+    subscribed_students = len(instructor_profile.subscribers.all())
+
+    context = {
+        'courses': courses,
+        'course_length': course_length,
+        'cart_total': cart_total,
+        'enrolled_students': enrolled_students,
+        'instructor_profile': instructor_profile,
+        'instructors': instructor_profiles,
+        'enrolled_length_student': enrolled_length_student,
+        'categories': categories,
+        'title': f'{instructor_profile.user.username} || Profile',
+        'subscribed_students': subscribed_students
+    }
+    return render(request, 'instructor_profile.html', context)
+
+
+
+def studentprofile(request, user_id):
+    user = request.user
+    try:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    except:
+        cart_total = 0
+
+    user = User.objects.get(id = user_id)
+    student_profile = get_object_or_404(StudentProfile,user=user)
+    mycourses = Course.objects.filter(payment__user=user, payment__status='Success', active=True).distinct()
+    instructor_profiles = InstructorProfile.objects.all()[:3]
+    categories = Category.objects.all()
+    saved_courses = SavedCourse.objects.filter(user=request.user)
+    # Get all enrolled students for the current instructor
+    domain_name = request.META['HTTP_HOST']
+    profile_link = f'{domain_name}/settings'
+    context = {
+        'cart_total': cart_total,
+        'mycourses': mycourses,
+        'saved_courses': saved_courses,
+        'profile_link': profile_link,
+        'student_profile': student_profile,
+        'instructors': instructor_profiles,
+        'categories': categories,
+        'title': f'{student_profile.user.username} || Profile',
+    }
+    return render(request, 'student_profile.html', context)
+
+
+
+
+def subscribe(request):
+    user = request.user
+    if request.method == "POST":
+        print(request.POST)
+        instructor_profile_id = request.POST.get('instructor_profile_id') 
+        instructorprofile = InstructorProfile.objects.get(id = instructor_profile_id)
+        if InstructorSubscription.objects.filter(student = user, instructor=instructorprofile).exists():
+            return JsonResponse({'warning': f'You have already subscribed to {instructorprofile.user.username}'})
+
+        InstructorSubscription.objects.create(student = user, instructor=instructorprofile)
+        subscribed_students = len(instructorprofile.subscribers.all())
+        return JsonResponse({'message': f'Subscribed to {instructorprofile.user.username}', 'subscribed_students': subscribed_students})
+
+
+
+def profile(request):
+    user = request.user
+    cart = Cart.objects.filter(user=user)
+    cart_total = len(cart)
+    instructor_profile = get_object_or_404(InstructorProfile,user=user)
+    categories = Category.objects.all()
+
+    # Get all enrolled students for the current instructor
+    enrolled_students = UserCourse.objects.filter(course__user=user.instructorprofile).values('user__username').distinct()
+    enrolled_length_student = len(enrolled_students)
+    courses = Course.objects.filter(user = user.instructorprofile)
+    course_length = len(courses)
+    context = {
+        'courses': courses,
+        'course_length': course_length,
+        'cart': cart,
+        'cart_total': cart_total,
+        'enrolled_students': enrolled_students,
+        'instructor_profile': instructor_profile,
+        'categories': categories,
+        'enrolled_length_student': enrolled_length_student,
+        'title': f'{instructor_profile.user.username} || Profile'
+    }
+    return render(request, 'instructor_profile.html', context)
+
+
+
+def category_courses(request, category_name):
+    print(category_name)
+    print('category_name')
+    categories = Category.objects.all()
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    category = get_object_or_404(Category, name = category_name)
+    courses = Course.objects.filter(category=category, active = True)
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    category_length = len(courses)
+    context = {
+        'courses': courses,
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'category_length': category_length,
+        'categories': categories,
+        'category': category,
+        'title': f'Category '
+    }
+    return render(request, 'category_courses.html', context)
+
+def all_categories(request):
+    categories = Category.objects.all()
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    category_length = len(categories)
+    context = {
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'category_length': category_length,
+        'categories': categories,
+        'category': categories,
+        'title': f'All Category'
+    }
+    return render(request, 'all_categories.html', context)
+
+
+def all_instructors(request):
+    user = request.user
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+
+    query = request.GET.get('q')
+
+    if query:
+        # Search for instructors whose username, profession, or about_you field contains the query
+        _instructors = InstructorProfile.objects.filter(
+            Q(user__username__icontains=query) |
+            Q(user__first_name__icontains=query) |
+            Q(user__last_name__icontains=query) |
+            Q(profession__icontains=query) |
+            Q(about_you__icontains=query)
+        ).distinct()
+
+    else:
+        # If no query is provided, display all instructors
+        _instructors = InstructorProfile.objects.all()
+        query = ''
+
+    title = 'All Instructors'
+    categories = Category.objects.all()
+    context = {
+        'instructors_': _instructors,
+        'instructors': instructor_profile,
+        'categories': categories,
+        'cart_total': cart_total,
+        'query': query,
+        'title': title,
+    }
+
+    return render(request, 'all_instructors.html', context)
+
+
+
+def verify(request, id):
+    # transaction = Transaction(authorixation_key = settings.PAYSTACK_SECRET_KEY)
+    # response = transaction.verify(id)
+    # data = JsonResponse(response, safe=False) 
+    return "data"
+
+
+
+@login_required
+def checkout_page(request):
+    user_id = request.user.id
+    user = request.user
+    cart_items = Cart.objects.filter(user=user)
+    total_price = sum(item.course.get_discounted_price * item.quantity for item in cart_items)
+    if request.method=="POST":
+        print(request.POST)
+        first_name = request.POST.get('first_name')
+        email = request.POST.get('email')
+        if request.user.email == email:
+            pass
+        else:
+            if User.objects.filter(email = email).exists():
+                return JsonResponse({'message': 'Email Already Exist'})
+        last_name = request.POST.get('last_name')
+        country =  request.POST.get('country')
+        address1 = request.POST.get('address1')
+        address2 = request.POST.get('address2')
+        city =  request.POST.get('city')
+        state =  request.POST.get('state')
+        zipcode = request.POST.get('zipcode') 
+        phone_number = request.POST.get('phone_number')
+        print(last_name)
+        update_user = User.objects.get(id=user_id)
+        update_user.first_name = first_name
+        update_user.last_name = last_name
+        update_user.email = email
+        update_user.save()
+        user_profile = StudentProfile.objects.get(user=user)
+        user_profile.country = country
+        user_profile.address1=address1
+        user_profile.address2=address2
+        user_profile.city =city
+        user_profile.state = state
+        user_profile.zipcode =zipcode
+        user_profile.phone_number = phone_number
+        user_profile.save()
+        print(user_profile)
+    cart_items = Cart.objects.filter(user=user)
+    length = len(cart_items)
+    discounted_price = 0 
+    for c in cart_items:
+        discounted_price += c.course.get_discounted_price
+    original_price = 0
+    for c in cart_items:
+        original_price += c.course.price
+    discount = round(original_price - discounted_price,2)
+    user_profile, created = StudentProfile.objects.get_or_create(user=user)
+    url = "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=ngn"
+    response = requests.get(url)
+    try:
+        if response.status_code == 200:
+            data = response.json()
+            usdtngn_price = data['tether']['ngn']
+
+        if usdtngn_price is not None:
+            print("USDT/NGN Price:", usdtngn_price)
+            usdt_ngn = usdtngn_price
+        else:
+            usdt_ngn = 0
+            print(usdt_ngn)
+    except:
+        usdt_ngn = 0
+
+    context = {'cart_items': cart_items, 
+               'user_profile': user_profile,
+               'total_cart_dprice': discount,
+               'total_cart_oprice': original_price,
+               'total_cart_price': discounted_price,
+               'total_price_ngn': round(total_price * usdt_ngn),
+               'total_price': round(total_price * usdt_ngn) * 100,
+               'pk_public': 'FLWPUBK-22da3de668f7f84d3e13138c33945409-X',
+                'length':length}
+    return render(request, 'checkout.html', context)
+
+def handler404(request, exception):
+    context = {}
+    response = render(request, "error_404.html", context=context)
+    response.status_code = 404
+    return response
+
+@csrf_exempt  # Use this decorator for simplicity in this example; consider using CSRF protection in a production environment
+def save_transaction_data(request):
+    # try:
+        if request.method == 'POST':
+    
+            cart_items = Cart.objects.filter(user=request.user)
+            
+            for cart_item in cart_items:
+                # Assuming you have a UserCourse object for the student's enrollment
+                user_course = UserCourse.objects.create(user=request.user, course=cart_item.course)
+
+                # Create a Payment record for each course
+                if request.POST.get('paystack') == 'paystack':
+                    Payment.objects.create(
+                        order_id=request.POST.get('reference_id'),
+                        payment_id=request.POST.get('reference_id'),
+                        user_course=user_course,
+                        user=request.user,
+                        payment_type = 'Paystack',
+                        course=cart_item.course,
+                        status='Success',  # Set status to True for successful payment
+                    )
+                    
+                    
+                else:
+                    Payment.objects.create(
+                        order_id=request.POST.get('reference_id'),
+                        payment_id=request.POST.get('reference_id'),
+                        user_course=user_course,
+                        user=request.user,
+                        payment_type = 'Crypto',
+                        course=cart_item.course,
+                        status='Pending',  # Set status to null for pending payment
+                    )
+
+            # Clear the user's cart after successful payment
+            cart_items.delete()
+            if len(cart_items) > 1:
+                pass
+            else:
+                pass
+            if request.POST.get('paystack') == 'paystack':
+                domain_name = request.META['HTTP_HOST']
+                orderid = request.POST.get('reference_id')
+                domain = f'https://{domain_name}/payment-status?orderId={orderid}'
+                return JsonResponse({'url': domain})
+            
+            return HttpResponseRedirect('/courses')
+    # except:
+    #     return JsonResponse({'message': 'An Error Occurred'}, status = 400)
+
+
+
+# @csrf_exempt  # Use this decorator for simplicity in this example; consider using CSRF protection in a production environment
+# def cryptopayment(request):
+#     # try:
+#         if request.method == 'POST':
+#             cart_items = Cart.objects.filter(user=request.user)
+            
+#             for cart_item in cart_items:
+#                 # Assuming you have a UserCourse object for the student's enrollment
+#                 user_course = UserCourse.objects.create(user=request.user, course=cart_item.course)
+
+#                 # Create a Payment record for each course
+#                 Payment.objects.create(
+#                     order_id=request.POST.get('reference_id'),
+#                     payment_id=request.POST.get('reference_id'),
+#                     user_course=user_course,
+#                     user=request.user,
+#                     course=cart_item.course,
+#                     status=True,  # Set status to True for successful payment
+#                 )
+
+#             # Clear the user's cart after successful payment
+#             cart_items.delete()
+#             if len(cart_items) > 1:
+#                 messages.success(request, 'Courses purchased successfully')
+#             else:
+#                 messages.success(request, 'Course purchased successfully')
+#             return HttpResponseRedirect('/courses')
+
+
+@csrf_exempt
+def create_crypto_invoice(request):
+    price = request.POST.get('price')
+    print(request.POST)
+    courses_param = request.POST.get('courses', '')
+    course_names = []
+    if courses_param:
+        # Unescape HTML entities and safely evaluate the expression
+        courses_param = escape(courses_param)
+        try:
+            # Evaluate the expression safely using ast.literal_eval
+            courses_list = eval(courses_param)
+            for cart in courses_list:
+                # Assuming Cart model has a 'course' attribute
+                course_names.append(cart.course.name)
+        except (ValueError, TypeError, SyntaxError):
+            # Handle potential errors during evaluation
+            pass
+
+    # Print or use the course_names list as needed
+    print(course_names)
+    domain_name = request.META['HTTP_HOST']
+    request = CreateInvoiceRequest()
+    request.price_amount=price
+    request.price_currency='USD'
+    request.app_id = 'f220503d-8bb2-410e-8eb0-d2b80e073547'
+    print(domain_name)
+    request.notify_url=f'https://{domain_name}/handler/'
+    request.redirect_url=f'https://{domain_name}/payment-status/'
+    request.order_id= generate_order_id()
+    request.title='Course Purchase'
+    request.description=''
+
+    client = UniPaymentClient(client_id, client_secret)
+    create_invoice_response = client.create_invoice(request)
+    return JsonResponse({'invoice_url': create_invoice_response.data.invoice_url,'invoice_id': create_invoice_response.data.invoice_id})
+
+
+@login_required
+def mycourses(request):
+    user = request.user
+
+    # Fetch courses based on successful payments
+    courses = Course.objects.filter(payment__user=user, payment__status='Success', active=True).distinct()
+
+    instructor_profile = InstructorProfile.objects.all()[:3]
+
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+
+    categories = Category.objects.all()
+
+    context = {
+        'courses': courses,
+        'cart_total': cart_total,
+        'instructors': instructor_profile,
+        'title': 'My Courses',
+        'categories': categories
+    }
+
+    return render(request, 'my_courses.html', context)
+
+
+def course_purchase_status(request, course_id):
+    user = request.user
+
+    try:
+        course = Course.objects.get(id=course_id)
+    except Course.DoesNotExist:
+        return JsonResponse({'error': 'Course not found'}, status=404)
+
+    # Check if there is a successful payment for the course
+    is_purchased = Payment.objects.filter(
+        user=user,
+        course=course,
+        status='Success'
+    ).exists()
+
+    if is_purchased:
+        return JsonResponse({'message': 'You have purchased this course already'})
+
+@user_has_purchased_course
+def video_detail(request, course_slug, video_id):
+    course = get_object_or_404(Course, slug=course_slug)
+    video = get_object_or_404(Video, id=video_id, section__course=course)
+    print(video)
+    print('samson')
+    # Render the video playback page
+    video_details = {
+        'video_id': video.video_id,
+    }
+    return JsonResponse(video_details)
+
+
+# @login_required
+def save_course(request, course_id):
+    user = request.user
+    if user.is_authenticated:
+        pass
+    else:
+        return JsonResponse({'warning': 'Please login in to save this course'})
+    course = Course.objects.get(id=course_id)
+
+    # Check if the course is already saved
+    if not SavedCourse.objects.filter(user=user, course=course).exists():
+        SavedCourse.objects.create(user=user, course=course)
+        return JsonResponse({'message': 'Course saved successfully'})
+
+    else:
+        return JsonResponse({'error': 'Course saved already'})
+
+
+@login_required
+def remove_save_course(request, course_id):
+    user = request.user
+    course = Course.objects.get(id=course_id)
+
+    # Check if the course is already saved
+    if SavedCourse.objects.filter(user=user, course=course).exists():
+        saved_course = SavedCourse.objects.get(user=user, course=course)
+        saved_course.delete()
+        return JsonResponse({'message': 'Saved Course Deleted successfully'})
+
+    else:
+        return JsonResponse({'warning': 'Course saved already'})
+
+@login_required
+def remove_all_saved_courses(request):
+    # try:
+        user = request.user
+        saved_course = SavedCourse.objects.filter(user=user)
+        if len(saved_course) < 1:
+            return JsonResponse({'warning': 'No Saved Course'})
+        saved_course.delete()
+        return JsonResponse({'message': 'All Saved Courses Deleted successfully'})
+    # except:
+    #     return JsonResponse({'error': 'An Error Occured'})
+
+@login_required
+def saved_courses(request):
+    courses = SavedCourse.objects.filter(user=request.user)
+    user = request.user
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    categories = Category.objects.all()
+    context = {
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'title': 'Saved Courses',
+        'categories': categories,
+        'courses': courses
+    }
+    return render(request, 'saved_courses.html', context)
+
+@login_required
+def view_notifications(request):
+    # Mark notifications as read when viewed
+    notifications = Notification.objects.filter(student=request.user, is_read=False)
+    for notification in notifications:
+        notification.is_read = True
+        notification.save()
+
+    # Fetch all notifications for the logged-in student
+    all_notifications = Notification.objects.filter(student=request.user)
+
+    # Render the template with the notifications
+    return render(request, 'notifications.html', {'notifications': all_notifications})
+
+@login_required
+def payment_history(request):
+    payments = Payment.objects.filter(user=request.user)
+    courses = SavedCourse.objects.filter(user=request.user)
+    user = request.user
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    categories = Category.objects.all()
+    context = {
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'categories': categories,
+        'courses': courses,
+         'payments': payments,
+    }
+
+    return render(request, 'payment_history.html', context)
+
+
+
+@login_required
+def payment_successful_crypto(request):
+    query = request.GET.get('orderId')
+    return render(request, 'payment_successful.html', {'query': query})
+    
+@login_required
+def payment_successful(request):
+
+    query = request.GET.get('orderId')
+    print(query)
+    payment = Payment.objects.filter(order_id = query).first()
+    if payment:
+        if payment.status == 'Success':
+            status = 'Success'
+        elif payment.status == 'Pending':
+            status = 'Pending'
+        else:
+            status = 'Pending'
+        return render(request, 'payment_successful_crypto.html', {'query': query, 'status': status})
+    else:
+        return render(request, 'payment_successful_crypto.html', {'query': query})
+  
+
+
+@login_required
+def user_settings(request):
+    user = request.user
+    instructors = InstructorProfile.objects.all()[:2]
+    if hasattr(request.user, 'instructorprofile'):
+        print(';kfhuqiedfhwqidj')
+        instructor_profile = InstructorProfile.objects.get(user = user)
+        profile = InstructorProfile.objects.get(user = user)
+        if request.method == "POST":
+            last_name = request.POST.get('last_name')
+            email = request.POST.get('email')
+            profile_pic = request.FILES.get('profile_pic')
+            first_name = request.POST.get('first_name')
+            profession = request.POST.get('profession')
+            website = request.POST.get('website')
+            facebook = request.POST.get('facebook')
+            linkedin = request.POST.get('linkedin')
+            youtube = request.POST.get('youtube')
+            twitter = request.POST.get('twitter')
+            print(twitter)
+            about =  request.POST.get('about')
+            update_user = User.objects.get(id=user.id)
+            update_user.first_name = first_name
+            update_user.last_name = last_name
+            update_user.email = email
+            update_user.save()
+            user_profile = InstructorProfile.objects.get(id=instructor_profile.id)
+            print(user_profile)
+            user_profile.profession=profession
+            user_profile.youtube =youtube
+            user_profile.facebook =facebook
+            user_profile.twitter =twitter
+            user_profile.website_link =website
+            user_profile.linkedin =linkedin
+            if profile_pic:
+                user_profile.image =profile_pic
+            else:
+                user_profile.image = profile.image
+
+            user_profile.about_you =about
+            user_profile.save()
+            return HttpResponseRedirect('/settings')
+
+       
+        
+    else:
+        student_profile = StudentProfile.objects.get(user = user)
+        profile = StudentProfile.objects.get(user = user)
+        if request.method == "POST":
+            last_name = request.POST.get('last_name')
+            profile_pic = request.FILES.get('profile_pic')
+            email = request.POST.get('email')
+            facebook = request.POST.get('facebook')
+            website = request.POST.get('website')
+            linkedin = request.POST.get('linkedin')
+            youtube = request.POST.get('youtube')
+            twitter = request.POST.get('twitter')
+            first_name = request.POST.get('first_name')
+            about =  request.POST.get('about')
+            update_user = User.objects.get(id=user.id)
+            update_user.first_name = first_name
+            update_user.last_name = last_name
+            update_user.email = email
+            update_user.save()
+            user_profile = StudentProfile.objects.get(id=student_profile.id)
+            user_profile.about_you = about
+            if profile_pic:
+                user_profile.image =profile_pic
+            else:
+                user_profile.image = profile.image
+            user_profile.website_link =website
+            user_profile.youtube =youtube
+            user_profile.facebook =facebook
+            user_profile.twitter =twitter
+            user_profile.linkedin =linkedin
+            user_profile.save()
+            return HttpResponseRedirect('/settings')
+    
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    categories = Category.objects.all()
+    context = {
+        'cart_total': cart_total, 
+        'categories': categories,
+        'title': 'Profile',
+    }
+    context['profile'] = profile
+    context['instructors'] = instructors
+    return render(request, 'setting.html', context)
+
+
+
+def update_billing(request):
+    user = request.user
+    if hasattr(user, 'instructorprofile'):
+
+        if request.method == "POST":
+            instructor_profile = InstructorProfile.objects.get(user = user)
+            last_name = request.POST.get('last_name')
+            first_name = request.POST.get('first_name')
+            country =  request.POST.get('country')
+            address1 = request.POST.get('address1')
+            address2 = request.POST.get('address2')
+            city =  request.POST.get('city')
+            state =  request.POST.get('state')
+            zipcode = request.POST.get('zipcode') 
+            phone_number = request.POST.get('phone')
+            update_user = User.objects.get(id=user.id)
+            update_user.first_name = first_name
+            update_user.last_name = last_name
+            update_user.save()
+            user_profile = InstructorProfile.objects.get(id=instructor_profile.id)
+            user_profile.country = country
+            user_profile.address1=address1
+            user_profile.address2=address2
+            user_profile.city =city
+            user_profile.state = state
+            user_profile.zipcode =zipcode
+            user_profile.phone_number = phone_number
+            user_profile.save()
+            return HttpResponseRedirect('/settings')
+    else:
+        if request.method == "POST":
+            student_profile = StudentProfile.objects.get(user = user)
+            last_name = request.POST.get('last_name')
+            first_name = request.POST.get('first_name')
+            country =  request.POST.get('country')
+            address1 = request.POST.get('address1')
+            address2 = request.POST.get('address2')
+            city =  request.POST.get('city')
+            state =  request.POST.get('state')
+            zipcode = request.POST.get('zipcode') 
+            phone_number = request.POST.get('phone')
+            update_user = User.objects.get(id=user.id)
+            update_user.first_name = first_name
+            update_user.last_name = last_name
+            update_user.save()
+            user_profile = StudentProfile.objects.get(id=student_profile.id)
+            user_profile.country = country
+            user_profile.address1=address1
+            user_profile.address2=address2
+            user_profile.city =city
+            user_profile.state = state
+            user_profile.zipcode =zipcode
+            user_profile.phone_number = phone_number
+            user_profile.save()
+            return HttpResponseRedirect('/settings')
+
+
+
+def close_account(request):
+    user_id = request.user.id
+    if request.method == "POST":
+        password = request.POST.get('password')
+        user = request.user
+        try:
+            if user.check_password(password):
+                logout(request)
+                user = User.objects.get(id=user_id)
+                user.delete()
+                return JsonResponse({'success': 'Account Deleted Successfully'})
+            else:
+                return JsonResponse({'error': 'Password incorrect'})
+
+        except:
+                return JsonResponse({'error': 'An Error Occur'})
+
+
+
+def change_password(request):
+    user_id = request.user.id
+    if request.method == "POST":
+        password = request.POST.get('password')
+        new_password = request.POST.get('new_password')
+        user = request.user
+        try:
+            if user.check_password(password):
+                user = User.objects.get(id=user_id)
+                user.set_password(new_password)  
+                user.save()
+                return JsonResponse({'success': 'Password Changed'})
+            else:
+                return JsonResponse({'error': 'Password incorrect'})
+
+        except:
+                return JsonResponse({'error': 'An Error Occur'})
+
+
+
+def live_search(request):
+    query = request.GET.get('q', '')
+
+    if query:
+        # Search for courses whose name, intro, description, or instructor's username contains the query
+        courses = Course.objects.filter(
+            Q(name__icontains=query) |
+            Q(intro__icontains=query) |
+            Q(description__icontains=query) |
+            Q(user__user__username__icontains=query)
+        ).distinct()
+
+    
+
+        results = []
+        for course in courses:
+            result = {
+                'name': course.name,
+                'image_url': course.imageURL,
+                'slug': course.slug,
+            }
+            results.append(result)
+
+    return JsonResponse({'results': results})
+
+
+def about_us(request):
+    context = {}
+    return render(request, 'about_us.html', context)
+
+
+
+def company(request):
+    context = {}
+    return render(request, 'company.html', context)
+
+
+
+
+def careers(request):
+    context = {}
+    return render(request, 'career.html', context)
+
+
+def coming_soon(request):
+    context = {}
+    return render(request, 'coming_soon.html', context)
+
+
+def terms_conditions(request):
+    context = {}
+    return render(request, 'terms_of_use.html', context)
+
+
+
+def developers(request):
+    context = {}
+    return render(request, 'coming_soon.html', context)
+
+
+def contact_us(request):
+    context = {}
+    return render(request, 'contact_us.html',context)
+
+
+
+def feedback(request):
+    if request.method == 'POST':
+        email = request.POST.get('email')
+        issue = request.POST.get('issue')
+        image = request.FILES.get('image')
+
+        Feedback.objects.create(email = email, image = image, issue = issue)
+        return HttpResponseRedirect('/feedback')
+    instructor_profile = InstructorProfile.objects.all()[:3]
+    user = request.user
+    if user.is_authenticated:
+        cart = Cart.objects.filter(user=user)
+        cart_total = len(cart)
+    else:
+        cart_total = 0
+    categories = Category.objects.all()
+    context = {
+        'cart_total': cart_total, 
+        'instructors': instructor_profile,
+        'title': 'Feedback',
+        'categories': categories,
+    }
+
+    return render(request, 'feedback.html', context)
+
+
+
+def logout_page(request):
+    logout(request)
+    return redirect('/')
+
+
+
+
+def password_reset_request(request):
+    if request.method == 'POST':
+        form = PasswordResetForm(request.POST)
+        if form.is_valid():
+            user_email = form.cleaned_data['email'].lower()
+            associated_user = get_user_model().objects.filter(Q(email=user_email)).first()
+            if associated_user:
+                subject = "Password Reset request"
+                message = render_to_string("template_reset_password.html", {
+                    'user': associated_user,
+                    'domain': get_current_site(request).domain,
+                    'uid': urlsafe_base64_encode(force_bytes(associated_user.pk)),
+                    'token': account_activation_token.make_token(associated_user),
+                    "protocol": 'https' if request.is_secure() else 'http'
+                })
+                email = EmailMessage(subject, message, to=[associated_user.email])
+                if email.send():
+                    messages.success(request,
+                        """
+                        <h2>Password reset sent</h2><hr>
+                        <p>
+                            We've emailed you instructions for setting your password, if an account exists with the email you entered. 
+                            You should receive them shortly.<br>If you don't receive an email, please make sure you've entered the address 
+                            you registered with, and check your spam folder.
+                        </p>
+                        """
+                    )
+                else:
+                    messages.error(request, "Problem sending reset password email, <b>SERVER PROBLEM</b>")
+            else:
+                messages.error(request, "Email Does Not Exist")
+
+            return redirect('password_reset')
+
+        for key, error in list(form.errors.items()):
+            if key == 'captcha' and error[0] == 'This field is required.':
+                messages.error(request, "You must pass the reCAPTCHA test")
+                continue
+
+    form = PasswordResetForm()
+    return render(
+        request=request, 
+        template_name="password_reset.html", 
+        context={"form": form}
+        )
+
+
+
+def passwordResetConfirm(request, uidb64, token):
+    User = get_user_model()
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except:
+        user = None
+
+    if user is not None and account_activation_token.check_token(user, token):
+        if request.method == 'POST':
+            form = SetPasswordForm(user, request.POST)
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Your password has been set. You may go ahead and <b>log in </b> now.")
+                return redirect('home')
+            else:
+                for error in list(form.errors.values()):
+                    messages.error(request, error)
+
+        form = SetPasswordForm(user)
+        return render(request, 'password_reset_confirm.html', {'form': form})
+    else:
+        messages.error(request, "Link is expired")
+
+    messages.error(request, 'Something went wrong, redirecting back to home')
+    return redirect("home")
+
+
+# {'ipn_type': 'invoice', 'event': 'invoice_created', 'app_id': 'f220503d-8bb2-410e-8eb0-d2b80e073547', 'invoice_id': '33jo5B1pCu7EzTqG5vWjtB', 'order_id': '#4', 'price_amount': 1.0, 'price_currency': 'USD', 'network': 'NETWORK_BSC', 'address': '0x912e1072c32ffda3ba3e2dac1dce16d605ae46a2', 'pay_currency': 'UTT', 'pay_amount': 1.0, 'exchange_rate': 1.0, 'paid_amount': 0.0, 'confirmed_amount': 0.0, 'refunded_price_amount': 0.0, 'create_time': '2023-12-15T15:06:50.9367276Z', 'expiration_time': '2023-12-15T15:26:50.9436043Z', 'status': 'New', 'error_status': 'None', 'ext_args': None, 'transactions': None, 'notify_id': 'fa4f3953-6f59-46c5-9b0a-a47b4eb9465a', 'notify_time': '2023-12-15T15:06:52.9893826Z'}\
+
+
+
+def dashboard(request):
+
+    all_student = StudentProfile.objects.all()
+    all_instructor= InstructorProfile.objects.all()
+    courses = Course.objects.all()
+    
+    context = {
+        'all_instructor': all_instructor,
+        'courses': courses,
+        'all_student': all_student,
+    }
+    return render(request, 'dashboard.html', context)
+
+def dashboard_payment(request):
+
+    payments = Payment.objects.all()
+    
+    context = {
+        'payments': payments,
+    }
+    return render(request, 'dashboard_payment.html', context)

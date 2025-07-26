@@ -45,7 +45,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
     // Configure editor options
     editor.updateOptions({
-      fontSize: 14,
+      fontSize: 12,
       fontFamily: 'Consolas, "Courier New", monospace',
       lineNumbers: 'on',
       roundedSelection: false,

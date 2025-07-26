@@ -110,7 +110,12 @@ class ApiService {
     first_name: string;
     last_name: string;
   }): Promise<AuthResponse> {
-    const response = await this.api.post('/auth/register/', userData);
+    // Add password_confirm field required by backend
+    const registrationData = {
+      ...userData,
+      password_confirm: userData.password
+    };
+    const response = await this.api.post('/auth/register/', registrationData);
     return response.data;
   }
 
@@ -518,6 +523,51 @@ class ApiService {
 
   async getBillingInvoices(): Promise<any> {
     const response = await this.api.get('/api/billing/invoices/');
+    return response.data;
+  }
+
+  // Payment Gateway API methods
+  async getPaymentMethods(): Promise<any> {
+    const response = await this.api.get('/api/payments/methods/');
+    return response.data;
+  }
+
+  async createFlutterwavePayment(planId: number, purpose: string = 'subscription'): Promise<any> {
+    const response = await this.api.post('/api/payments/flutterwave/create/', {
+      plan_id: planId,
+      purpose: purpose
+    });
+    return response.data;
+  }
+
+  async createCryptoPayment(planId: number, cryptoType: string, purpose: string = 'subscription'): Promise<any> {
+    const response = await this.api.post('/api/payments/crypto/create/', {
+      plan_id: planId,
+      crypto_type: cryptoType,
+      purpose: purpose
+    });
+    return response.data;
+  }
+
+  async checkPaymentStatus(reference: string): Promise<any> {
+    const response = await this.api.get(`/api/payments/status/${reference}/`);
+    return response.data;
+  }
+
+  async verifyFlutterwavePayment(transactionId: string): Promise<any> {
+    const response = await this.api.post('/api/payments/flutterwave/verify/', {
+      transaction_id: transactionId
+    });
+    return response.data;
+  }
+
+  async cancelPayment(reference: string): Promise<any> {
+    const response = await this.api.post(`/api/payments/cancel/${reference}/`);
+    return response.data;
+  }
+
+  async getUserPayments(): Promise<any> {
+    const response = await this.api.get('/api/payments/history/');
     return response.data;
   }
 }

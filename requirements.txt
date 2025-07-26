@@ -45,4 +45,10 @@ channels[daphne]
 daphne
 uvicorn
 
+# Payment gateway dependencies
+requests-oauthlib
+rave-python
+cryptography
 
+# UniPayment SDK
+unipayment

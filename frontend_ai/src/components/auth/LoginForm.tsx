@@ -159,7 +159,7 @@ const LoginForm: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="relative z-10 w-full max-w-xl mx-auto px-6">
+      <div className="relative z-10 w-full max-w-xl mx-auto px-6 my-8">
         {/* Header */}
         <div className="text-center mb-12 space-y-6">
           <div className="flex items-center justify-center">

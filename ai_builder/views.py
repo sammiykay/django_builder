@@ -2393,3 +2393,4 @@ class ProjectSessionViewSet(ReadOnlyModelViewSet):
                 {'error': 'Active session not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+

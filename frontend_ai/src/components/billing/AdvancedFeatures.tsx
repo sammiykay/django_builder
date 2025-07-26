@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 interface AdvancedFeaturesProps {
-  plan: BillingPlan;
+  plan: BillingPlan | null;
 }
 
 interface FeatureItem {
@@ -107,6 +107,15 @@ const FEATURE_DEFINITIONS: FeatureItem[] = [
 ];
 
 const AdvancedFeatures: React.FC<AdvancedFeaturesProps> = ({ plan }) => {
+  // Handle loading/undefined state
+  if (!plan) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}

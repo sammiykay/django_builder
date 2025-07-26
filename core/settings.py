@@ -213,6 +213,22 @@ CORS_ALLOW_CREDENTIALS = True
 # AI Builder Settings
 CLAUDE_API_KEY = os.getenv('CLAUDE_KEY')
 # AUTH_USER_MODEL = 'authentication.CustomUser'
+
+# Payment Gateway Settings
+# Flutterwave
+FLUTTERWAVE_PUBLIC_KEY = os.getenv('FLUTTERWAVE_PUBLIC_KEY', '')
+FLUTTERWAVE_SECRET_KEY = os.getenv('FLUTTERWAVE_SECRET_KEY', '')
+FLUTTERWAVE_ENCRYPTION_KEY = os.getenv('FLUTTERWAVE_ENCRYPTION_KEY', '')
+
+# Nowpayment
+NOWPAYMENTS_API_KEY = os.getenv('NOWPAYMENTS_API_KEY', '')
+NOWPAYMENTS_IPN_SECRET = os.getenv('NOWPAYMENTS_IPN_SECRET', '')
+NOWPAYMENTS_BASE_URL = os.getenv('NOWPAYMENTS_BASE_URL', 'https://api-sandbox.nowpayments.io/v1')
+NOWPAYMENTS_SANDBOX = os.getenv('NOWPAYMENTS_SANDBOX', 'True').lower() == 'true'
+
+# URLs for callbacks
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
 # Logging
 LOGGING = {
     'version': 1,

@@ -4,6 +4,7 @@ import { Progress } from '../ui/progress';
 import Button from '../ui/Button';
 import { Badge } from '../ui/badge-new';
 import AdvancedFeatures from './AdvancedFeatures';
+import PaymentGateway from './PaymentGateway';
 import { 
   CreditCard, 
   Activity, 
@@ -70,6 +71,8 @@ export const SimpleBillingDashboard: React.FC = () => {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showPaymentGateway, setShowPaymentGateway] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<BillingPlan | null>(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -144,10 +147,21 @@ export const SimpleBillingDashboard: React.FC = () => {
 
   const { subscription, usage_stats, recent_usage, available_plans } = dashboardData;
 
-  const handlePlanUpgrade = (planType: string) => {
-    // TODO: Implement plan upgrade logic
-    console.log('Upgrading to plan:', planType);
-    // This would typically open a payment modal or redirect to checkout
+  const handlePlanUpgrade = (plan: BillingPlan) => {
+    setSelectedPlan(plan);
+    setShowPaymentGateway(true);
+  };
+
+  const handlePaymentSuccess = () => {
+    setShowPaymentGateway(false);
+    setSelectedPlan(null);
+    // Refresh dashboard data after successful payment
+    fetchDashboardData();
+  };
+
+  const handlePaymentClose = () => {
+    setShowPaymentGateway(false);
+    setSelectedPlan(null);
   };
 
   return (
@@ -329,10 +343,7 @@ export const SimpleBillingDashboard: React.FC = () => {
                 <Button 
                   className="w-full" 
                   variant={plan.plan_type === 'enterprise' ? 'default' : 'outline'}
-                  onClick={() => {
-                    // TODO: Implement plan upgrade
-                    console.log('Upgrade to plan:', plan.id);
-                  }}
+                  onClick={() => handlePlanUpgrade(plan)}
                 >
                   {plan.is_free ? 'Downgrade' : 'Upgrade'}
                 </Button>
@@ -348,9 +359,17 @@ export const SimpleBillingDashboard: React.FC = () => {
 
       {/* Advanced Features Section */}
       <AdvancedFeatures 
-        userPlan={subscription.plan.plan_type} 
-        onUpgrade={handlePlanUpgrade}
+        plan={subscription.plan}
       />
+
+      {/* Payment Gateway Modal */}
+      {showPaymentGateway && selectedPlan && (
+        <PaymentGateway
+          selectedPlan={selectedPlan}
+          onPaymentSuccess={handlePaymentSuccess}
+          onClose={handlePaymentClose}
+        />
+      )}
     </div>
   );
 };

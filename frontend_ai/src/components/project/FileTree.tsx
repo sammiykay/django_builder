@@ -213,8 +213,8 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
           className={`
             flex items-center py-2 px-3 rounded-md cursor-pointer transition-all group
             ${isSelected 
-              ? 'bg-primary-600/20 border-l-2 border-primary-500 text-primary' 
-              : 'hover:bg-tertiary/30 text-secondary hover:text-primary'
+              ? 'bg-blue-600/20 border-l-2 border-blue-500 text-white' 
+              : 'hover:bg-gray-800/50 text-gray-300 hover:text-white'
             }
           `}
           style={{ paddingLeft: `${depth * 16 + 12}px` }}
@@ -230,9 +230,9 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
           {node.type === 'directory' ? (
             <div className="mr-2 flex-shrink-0">
               {isExpanded ? (
-                <ChevronDown className="w-3 h-3 text-tertiary group-hover:text-secondary transition-colors" />
+                <ChevronDown className="w-3 h-3 text-gray-400 group-hover:text-gray-300 transition-colors" />
               ) : (
-                <ChevronRight className="w-3 h-3 text-tertiary group-hover:text-secondary transition-colors" />
+                <ChevronRight className="w-3 h-3 text-gray-400 group-hover:text-gray-300 transition-colors" />
               )}
             </div>
           ) : (
@@ -269,18 +269,18 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
 
   if (isLoading) {
     return (
-      <div className="p-4 text-center">
+      <div className="p-4 text-center bg-gray-900">
         <div className="text-gray-400">Loading files...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col bg-secondary border-r border-secondary">
+    <div className="h-full flex flex-col bg-gray-900 border-r border-gray-700/50">
       {/* Header */}
-      <div className="px-3 sm:px-4 py-3 border-b border-secondary">
+      <div className="px-3 sm:px-4 py-3 border-b border-gray-700/50 bg-gray-900/50 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-primary">Explorer</h3>
+          <h3 className="text-sm font-semibold text-white">Explorer</h3>
           {filteredTree.length > 0 && (
             <Badge variant="neutral" size="sm">
               {filteredTree.length}
@@ -307,15 +307,15 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
           </div>
         ) : searchQuery.trim() ? (
           <div className="p-6 text-center">
-            <Search className="w-8 h-8 text-tertiary mx-auto mb-2" />
-            <p className="text-sm text-secondary mb-1">No files found</p>
-            <p className="text-xs text-tertiary">Try a different search term</p>
+            <Search className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-300 mb-1">No files found</p>
+            <p className="text-xs text-gray-400">Try a different search term</p>
           </div>
         ) : (
           <div className="p-6 text-center">
-            <FileText className="w-8 h-8 text-tertiary mx-auto mb-2" />
-            <p className="text-sm text-secondary mb-1">No files found</p>
-            <p className="text-xs text-tertiary">This project appears to be empty</p>
+            <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-300 mb-1">No files found</p>
+            <p className="text-xs text-gray-400">This project appears to be empty</p>
           </div>
         )}
       </div>

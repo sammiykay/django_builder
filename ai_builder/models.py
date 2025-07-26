@@ -545,8 +545,11 @@ class UserSubscription(models.Model):
         if self.plan.token_limit == 0:  # Unlimited
             return float('inf')
         
+        # Total available = base limit + unused bonus tokens
         total_available = self.plan.token_limit + self.bonus_tokens_remaining
-        return max(0, total_available - self.tokens_used_this_period)
+        used_tokens = self.tokens_used_this_period
+        
+        return max(0, total_available - used_tokens)
     
     @property
     def usage_percentage(self):
@@ -583,29 +586,25 @@ class UserSubscription(models.Model):
             return False
         
         if not self.user.is_superuser and self.plan.token_limit > 0:
+            # Always track total usage for the period
             self.tokens_used_this_period += token_count
-            
-            # Use bonus tokens first
-            if self.bonus_tokens_remaining > 0:
-                bonus_used = min(token_count, self.bonus_tokens_remaining)
-                self.bonus_tokens_remaining -= bonus_used
-            
             self.save()
         
         return True
     
     def reset_period(self):
         """Reset for new billing period"""
-        from dateutil.relativedelta import relativedelta
+        from datetime import timedelta
         
         self.current_period_start = timezone.now()
         
         if self.plan.billing_interval == 'monthly':
-            self.current_period_end = self.current_period_start + relativedelta(months=1)
+            # Approximate monthly as 30 days
+            self.current_period_end = self.current_period_start + timedelta(days=30)
         elif self.plan.billing_interval == 'yearly':
-            self.current_period_end = self.current_period_start + relativedelta(years=1)
+            self.current_period_end = self.current_period_start + timedelta(days=365)
         else:  # one_time
-            self.current_period_end = self.current_period_start + relativedelta(years=100)
+            self.current_period_end = self.current_period_start + timedelta(days=36500)  # 100 years
         
         self.tokens_used_this_period = 0
         self.save()
@@ -735,3 +734,244 @@ class BillingInvoice(models.Model):
             self.invoice_number = f"{prefix}{sequence:04d}"
         
         super().save(*args, **kwargs)
+
+
+class PaymentMethod(models.Model):
+    """
+    Payment methods available for subscriptions
+    """
+    PAYMENT_TYPES = [
+        ('flutterwave', 'Flutterwave'),
+        ('crypto_bitcoin', 'Bitcoin'),
+        ('crypto_ethereum', 'Ethereum'),
+        ('crypto_usdt', 'USDT (Tether)'),
+        ('crypto_usdc', 'USDC'),
+    ]
+    
+    CRYPTO_NETWORKS = [
+        ('mainnet', 'Mainnet'),
+        ('testnet', 'Testnet'),
+        ('polygon', 'Polygon'),
+        ('bsc', 'BSC'),
+        ('arbitrum', 'Arbitrum'),
+    ]
+    
+    name = models.CharField(max_length=100)
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPES)
+    is_active = models.BooleanField(default=True)
+    
+    # Flutterwave specific fields
+    flutterwave_public_key = models.CharField(max_length=200, blank=True)
+    flutterwave_secret_key = models.CharField(max_length=200, blank=True)
+    flutterwave_encryption_key = models.CharField(max_length=200, blank=True)
+    
+    # Crypto specific fields
+    crypto_symbol = models.CharField(max_length=10, blank=True, help_text="BTC, ETH, USDT, etc.")
+    crypto_network = models.CharField(max_length=20, choices=CRYPTO_NETWORKS, blank=True)
+    wallet_address = models.CharField(max_length=200, blank=True)
+    contract_address = models.CharField(max_length=200, blank=True, help_text="For tokens like USDT")
+    decimals = models.IntegerField(default=18, help_text="Token decimals")
+    
+    # Pricing
+    usd_exchange_rate = models.DecimalField(max_digits=20, decimal_places=8, default=1.0)
+    last_rate_update = models.DateTimeField(auto_now=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['name']
+    
+    def __str__(self):
+        return f"{self.name} ({self.get_payment_type_display()})"
+    
+    @property
+    def is_crypto(self):
+        return self.payment_type.startswith('crypto_')
+    
+    @property
+    def is_flutterwave(self):
+        return self.payment_type == 'flutterwave'
+
+
+class Payment(models.Model):
+    """
+    Track all payment transactions
+    """
+    PAYMENT_STATUS = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+        ('expired', 'Expired'),
+        ('refunded', 'Refunded'),
+    ]
+    
+    PAYMENT_PURPOSES = [
+        ('subscription', 'Subscription Payment'),
+        ('upgrade', 'Plan Upgrade'),
+        ('token_purchase', 'Token Purchase'),
+        ('overage', 'Token Overage'),
+    ]
+    
+    # Basic payment info
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
+    invoice = models.ForeignKey(BillingInvoice, on_delete=models.SET_NULL, null=True, blank=True)
+    subscription = models.ForeignKey(UserSubscription, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Payment details
+    payment_id = models.CharField(max_length=100, unique=True)
+    reference = models.CharField(max_length=100, unique=True, help_text="Internal reference")
+    payment_method = models.ForeignKey(PaymentMethod, on_delete=models.PROTECT)
+    purpose = models.CharField(max_length=20, choices=PAYMENT_PURPOSES)
+    
+    # Amounts
+    amount_usd = models.DecimalField(max_digits=10, decimal_places=2)
+    amount_paid = models.DecimalField(max_digits=20, decimal_places=8, help_text="Amount in payment currency")
+    currency = models.CharField(max_length=10, help_text="USD, BTC, ETH, etc.")
+    exchange_rate = models.DecimalField(max_digits=20, decimal_places=8, default=1.0)
+    
+    # Status and timestamps
+    status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    
+    # Gateway specific data
+    gateway_transaction_id = models.CharField(max_length=200, blank=True)
+    gateway_response = models.JSONField(default=dict, blank=True)
+    
+    # Crypto specific fields
+    crypto_address = models.CharField(max_length=200, blank=True, help_text="Payment address")
+    transaction_hash = models.CharField(max_length=200, blank=True)
+    block_confirmations = models.IntegerField(default=0)
+    required_confirmations = models.IntegerField(default=3)
+    
+    # Webhook and callback tracking
+    webhook_received = models.BooleanField(default=False)
+    webhook_data = models.JSONField(default=dict, blank=True)
+    callback_url = models.URLField(blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['payment_method', '-created_at']),
+            models.Index(fields=['reference']),
+            models.Index(fields=['transaction_hash']),
+        ]
+    
+    def __str__(self):
+        return f"Payment {self.reference} - {self.user.username} - ${self.amount_usd}"
+    
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            import uuid
+            self.reference = f"PAY_{uuid.uuid4().hex[:8].upper()}"
+        super().save(*args, **kwargs)
+    
+    @property
+    def is_crypto_payment(self):
+        return self.payment_method.is_crypto
+    
+    @property
+    def is_confirmed(self):
+        if self.is_crypto_payment:
+            return self.block_confirmations >= self.required_confirmations
+        return self.status == 'completed'
+    
+    def mark_completed(self):
+        """Mark payment as completed and update related records"""
+        self.status = 'completed'
+        self.completed_at = timezone.now()
+        self.save()
+        
+        # Update invoice if exists
+        if self.invoice:
+            self.invoice.status = 'paid'
+            self.invoice.paid_date = self.completed_at
+            self.invoice.save()
+        
+        # Activate/upgrade subscription if needed
+        if self.subscription and self.purpose in ['subscription', 'upgrade']:
+            self.subscription.status = 'active'
+            self.subscription.last_payment_date = self.completed_at
+            if self.subscription.plan.billing_interval == 'monthly':
+                next_payment = self.completed_at + timedelta(days=30)
+            elif self.subscription.plan.billing_interval == 'yearly':
+                next_payment = self.completed_at + timedelta(days=365)
+            else:
+                next_payment = None
+            
+            if next_payment:
+                self.subscription.next_payment_date = next_payment
+            self.subscription.save()
+
+
+class CryptoWallet(models.Model):
+    """
+    Manage crypto wallets for receiving payments
+    """
+    payment_method = models.ForeignKey(PaymentMethod, on_delete=models.CASCADE, related_name='wallets')
+    address = models.CharField(max_length=200, unique=True)
+    private_key_encrypted = models.TextField(help_text="Encrypted private key")
+    
+    # Wallet status
+    is_active = models.BooleanField(default=True)
+    balance = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    last_balance_check = models.DateTimeField(null=True, blank=True)
+    
+    # Usage tracking
+    total_received = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    payment_count = models.IntegerField(default=0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.payment_method.crypto_symbol} Wallet: {self.address[:10]}..."
+
+
+class PaymentWebhook(models.Model):
+    """
+    Log all webhook events from payment gateways
+    """
+    WEBHOOK_TYPES = [
+        ('flutterwave', 'Flutterwave'),
+        ('crypto_confirmation', 'Crypto Confirmation'),
+        ('manual', 'Manual Update'),
+    ]
+    
+    webhook_type = models.CharField(max_length=20, choices=WEBHOOK_TYPES)
+    payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name='webhooks', null=True, blank=True)
+    
+    # Webhook data
+    webhook_id = models.CharField(max_length=200, blank=True)
+    event_type = models.CharField(max_length=100)
+    raw_data = models.JSONField(default=dict)
+    processed = models.BooleanField(default=False)
+    
+    # Processing results
+    success = models.BooleanField(default=False)
+    error_message = models.TextField(blank=True)
+    actions_taken = models.JSONField(default=list, help_text="List of actions performed")
+    
+    # Security
+    signature_valid = models.BooleanField(default=False)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.webhook_type} webhook - {self.event_type}"

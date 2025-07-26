@@ -82,10 +82,31 @@ class TokenService:
                 return False
             
             # Use tokens from subscription
-            subscription.use_tokens(token_count)
+            if not subscription.use_tokens(token_count):
+                # This shouldn't happen if can_use_tokens returned True, but let's be safe
+                TokenUsage.objects.create(
+                    user=user,
+                    project=project,
+                    subscription=subscription,
+                    usage_type=usage_type,
+                    tokens_used=0,
+                    operation_description=f"FAILED: {operation_description}",
+                    request_data=request_data or {},
+                    response_data=response_data or {},
+                    response_time_ms=response_time_ms,
+                    success=False,
+                    error_message="Failed to deduct tokens from subscription",
+                    cost_cents=0
+                )
+                return False
             
-            # Calculate cost (example: $0.001 per token)
-            cost_cents = int(token_count * 0.1)  # 0.1 cents per token
+            # Calculate cost based on plan type
+            if subscription.plan.plan_type == 'free':
+                cost_cents = 0  # Free plans don't incur costs
+            elif subscription.plan.plan_type == 'paid':
+                cost_cents = int(token_count * 0.05)  # 0.05 cents per token for paid plans
+            else:  # enterprise
+                cost_cents = int(token_count * 0.02)  # 0.02 cents per token for enterprise
             
             # Record usage
             TokenUsage.objects.create(
@@ -157,11 +178,14 @@ class TokenService:
                 tokens=Sum('tokens_used')
             ).order_by('day')
             
+            # Import serializer to avoid circular imports
+            from .serializers import BillingPlanSerializer
+            
             return {
                 'total_tokens_used': current_usage['total_tokens'] or 0,
                 'tokens_remaining': subscription.tokens_remaining,
                 'usage_percentage': subscription.usage_percentage,
-                'current_plan': subscription.plan,
+                'current_plan': BillingPlanSerializer(subscription.plan).data,
                 'usage_by_type': usage_by_type_dict,
                 'daily_usage': list(daily_usage),
                 'monthly_cost': Decimal((current_usage['total_cost_cents'] or 0) / 100)

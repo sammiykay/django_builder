@@ -22,7 +22,6 @@ class Command(BaseCommand):
                 'billing_interval': 'monthly',
                 'max_projects': 3,
                 'max_concurrent_containers': 1,
-                'advanced_features': {},
                 'is_active': True,
                 'is_default_free': True,
                 'sort_order': 1
@@ -37,11 +36,6 @@ class Command(BaseCommand):
                 'billing_interval': 'monthly',
                 'max_projects': 25,
                 'max_concurrent_containers': 3,
-                'advanced_features': {
-                    'priority_support': True,
-                    'advanced_analytics': True,
-                    'api_access': True
-                },
                 'is_active': True,
                 'is_default_free': False,
                 'sort_order': 2
@@ -56,14 +50,6 @@ class Command(BaseCommand):
                 'billing_interval': 'monthly',
                 'max_projects': 0,  # Unlimited
                 'max_concurrent_containers': 10,
-                'advanced_features': {
-                    'priority_support': True,
-                    'advanced_analytics': True,
-                    'api_access': True,
-                    'custom_templates': True,
-                    'team_collaboration': True,
-                    'dedicated_support': True
-                },
                 'is_active': True,
                 'is_default_free': False,
                 'sort_order': 3
@@ -78,11 +64,6 @@ class Command(BaseCommand):
                 'billing_interval': 'yearly',
                 'max_projects': 25,
                 'max_concurrent_containers': 3,
-                'advanced_features': {
-                    'priority_support': True,
-                    'advanced_analytics': True,
-                    'api_access': True
-                },
                 'is_active': True,
                 'is_default_free': False,
                 'sort_order': 4

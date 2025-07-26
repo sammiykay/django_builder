@@ -40,4 +40,7 @@ urlpatterns = [
     # Enhanced feature endpoints
     path('api/project-history/', views.ProjectHistoryView.as_view(), name='project-history'),
     path('api/projects/<uuid:pk>/stats/', views.ProjectStatsView.as_view(), name='project-stats'),
+    
+    # Payment endpoints
+    path('api/payments/', include('ai_builder.payment_urls')),
 ]

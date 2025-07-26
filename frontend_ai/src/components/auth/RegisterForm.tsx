@@ -152,35 +152,71 @@ const RegisterForm: React.FC = () => {
 
   // Real-time validation
   const validateField = (field: string, value: string) => {
-    const errors: Record<string, string> = {};
+    const newErrors = { ...validationErrors };
 
     switch (field) {
       case 'email':
-        if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          errors.email = 'Please enter a valid email address';
+        if (!value) {
+          newErrors.email = 'Email is required';
+        } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          newErrors.email = 'Please enter a valid email address';
+        } else {
+          delete newErrors.email;
         }
         break;
       case 'username':
-        if (value && value.length < 3) {
-          errors.username = 'Username must be at least 3 characters';
-        } else if (value && !/^[a-zA-Z0-9_]+$/.test(value)) {
-          errors.username = 'Username can only contain letters, numbers, and underscores';
+        if (!value) {
+          newErrors.username = 'Username is required';
+        } else if (value.length < 3) {
+          newErrors.username = 'Username must be at least 3 characters';
+        } else if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+          newErrors.username = 'Username can only contain letters, numbers, and underscores';
+        } else {
+          delete newErrors.username;
         }
         break;
       case 'password':
-        if (value && value.length < 8) {
-          errors.password = 'Password must be at least 8 characters';
+        if (!value) {
+          newErrors.password = 'Password is required';
+        } else if (value.length < 8) {
+          newErrors.password = 'Password must be at least 8 characters';
+        } else if (!/(?=.*[a-z])/.test(value)) {
+          newErrors.password = 'Password must contain at least one lowercase letter';
+        } else if (!/(?=.*[A-Z])/.test(value)) {
+          newErrors.password = 'Password must contain at least one uppercase letter';
+        } else if (!/(?=.*\d)/.test(value)) {
+          newErrors.password = 'Password must contain at least one number';
+        } else {
+          delete newErrors.password;
         }
         break;
       case 'confirmPassword':
-        if (value && value !== formData.password) {
-          errors.confirmPassword = 'Passwords do not match';
+        if (!value) {
+          newErrors.confirmPassword = 'Please confirm your password';
+        } else if (value !== formData.password) {
+          newErrors.confirmPassword = 'Passwords do not match';
+        } else {
+          delete newErrors.confirmPassword;
+        }
+        break;
+      case 'first_name':
+        if (!value) {
+          newErrors.first_name = 'First name is required';
+        } else {
+          delete newErrors.first_name;
+        }
+        break;
+      case 'last_name':
+        if (!value) {
+          newErrors.last_name = 'Last name is required';
+        } else {
+          delete newErrors.last_name;
         }
         break;
     }
 
-    setValidationErrors(prev => ({ ...prev, ...errors }));
-    return Object.keys(errors).length === 0;
+    setValidationErrors(newErrors);
+    return !newErrors[field];
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -208,7 +244,18 @@ const RegisterForm: React.FC = () => {
         last_name: formData.last_name
       });
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      console.error('Registration error:', err);
+      console.error('Error response:', err.response);
+      console.error('Error data:', err.response?.data);
+      
+      if (err.response?.data?.details) {
+        // Handle validation errors from backend
+        const details = err.response.data.details;
+        const errorMessages = Object.values(details).flat().join(' ');
+        setError(errorMessages);
+      } else {
+        setError(err.response?.data?.error || err.response?.data?.message || 'Registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -303,7 +350,9 @@ const RegisterForm: React.FC = () => {
                         type="text"
                         placeholder="Enter first name"
                         className={`w-full pl-12 pr-4 py-4 bg-gray-800/50 backdrop-blur-sm border rounded-xl text-white placeholder-gray-400 font-medium transition-all duration-300 focus:outline-none ${
-                          fieldFocus === 'first_name'
+                          validationErrors.first_name
+                            ? 'border-red-500 shadow-lg shadow-red-500/25'
+                            : fieldFocus === 'first_name'
                             ? 'border-blue-500 shadow-lg shadow-blue-500/25 bg-gray-800/80'
                             : 'border-gray-600/50 hover:border-gray-500/70'
                         }`}
@@ -316,6 +365,12 @@ const RegisterForm: React.FC = () => {
                       />
                     </div>
                   </div>
+                  {validationErrors.first_name && (
+                    <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                      <X className="w-3 h-3" />
+                      {validationErrors.first_name}
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -330,7 +385,9 @@ const RegisterForm: React.FC = () => {
                         type="text"
                         placeholder="Enter last name"
                         className={`w-full pl-12 pr-4 py-4 bg-gray-800/50 backdrop-blur-sm border rounded-xl text-white placeholder-gray-400 font-medium transition-all duration-300 focus:outline-none ${
-                          fieldFocus === 'last_name'
+                          validationErrors.last_name
+                            ? 'border-red-500 shadow-lg shadow-red-500/25'
+                            : fieldFocus === 'last_name'
                             ? 'border-blue-500 shadow-lg shadow-blue-500/25 bg-gray-800/80'
                             : 'border-gray-600/50 hover:border-gray-500/70'
                         }`}
@@ -343,6 +400,12 @@ const RegisterForm: React.FC = () => {
                       />
                     </div>
                   </div>
+                  {validationErrors.last_name && (
+                    <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                      <X className="w-3 h-3" />
+                      {validationErrors.last_name}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -437,7 +500,9 @@ const RegisterForm: React.FC = () => {
                       type={showPassword ? 'text' : 'password'}
                       placeholder="Create a strong password"
                       className={`w-full pl-12 pr-12 py-4 bg-gray-800/50 backdrop-blur-sm border rounded-xl text-white placeholder-gray-400 font-medium transition-all duration-300 focus:outline-none ${
-                        fieldFocus === 'password'
+                        validationErrors.password
+                          ? 'border-red-500 shadow-lg shadow-red-500/25'
+                          : fieldFocus === 'password'
                           ? 'border-blue-500 shadow-lg shadow-blue-500/25 bg-gray-800/80'
                           : 'border-gray-600/50 hover:border-gray-500/70'
                       }`}
@@ -461,7 +526,13 @@ const RegisterForm: React.FC = () => {
                       )}
                     </button>
                   </div>
-                  {formData.password && (
+                  {validationErrors.password && (
+                    <p className="text-red-400 text-xs mt-1 flex items-center gap-1">
+                      <X className="w-3 h-3" />
+                      {validationErrors.password}
+                    </p>
+                  )}
+                  {formData.password && !validationErrors.password && (
                     <div className="mt-2 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-gray-400">Password strength:</span>

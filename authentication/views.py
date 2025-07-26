@@ -13,9 +13,28 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     
     def create(self, request, *args, **kwargs):
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Registration request data: {request.data}")
+        
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
+        if not serializer.is_valid():
+            logger.error(f"Registration validation errors: {serializer.errors}")
+            return Response({
+                'error': 'Validation failed',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = serializer.save()
+            logger.info(f"User created successfully: {user.username}")
+        except Exception as e:
+            logger.error(f"Error creating user: {str(e)}")
+            return Response({
+                'error': 'Failed to create user',
+                'details': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         refresh = RefreshToken.for_user(user)
         

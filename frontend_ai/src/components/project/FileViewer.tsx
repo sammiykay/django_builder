@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { FileText, Download, Copy, Check, AlertCircle, Loader2, Edit3, Save, X } from 'lucide-react';
 import { apiService } from '../../services/api';
 import CodeEditor from './CodeEditor';
@@ -13,9 +13,22 @@ interface FileViewerProps {
   filePath: string | null;
   showHeader?: boolean;
   showFooter?: boolean;
+  forceEditMode?: boolean;
+  onEditModeChange?: (isEditing: boolean) => void;
+  onUnsavedChanges?: (hasChanges: boolean) => void;
+  onSaving?: (isSaving: boolean) => void;
 }
 
-const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader = true, showFooter = true }) => {
+const FileViewer: React.FC<FileViewerProps> = ({ 
+  projectId, 
+  filePath, 
+  showHeader = true, 
+  showFooter = true, 
+  forceEditMode = false,
+  onEditModeChange,
+  onUnsavedChanges,
+  onSaving
+}) => {
   const [fileContent, setFileContent] = useState<string>('');
   const [editedContent, setEditedContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -24,6 +37,7 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const prevEditingRef = useRef(isEditing);
 
   useEffect(() => {
     if (filePath) {
@@ -37,13 +51,34 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader
     }
   }, [filePath, projectId]);
 
+  const fileName = filePath?.split('/').pop() || '';
+  const language = getLanguageFromFileName(fileName);
+  const canEdit = isEditableFile(fileName) || forceEditMode; // Allow editing if forced
+
+  // Handle external edit mode control
   useEffect(() => {
-    if (fileContent !== editedContent && editedContent !== '') {
-      setHasUnsavedChanges(true);
-    } else {
-      setHasUnsavedChanges(false);
+    if (forceEditMode !== undefined && isEditing !== forceEditMode) {
+      console.log('FileViewer: Forcing edit mode to:', forceEditMode, 'for file:', filePath);
+      setIsEditing(forceEditMode);
     }
-  }, [fileContent, editedContent]);
+  }, [forceEditMode, filePath, isEditing]);
+
+  // Notify parent of edit mode changes
+  useEffect(() => {
+    if (onEditModeChange && prevEditingRef.current !== isEditing) {
+      onEditModeChange(isEditing);
+      prevEditingRef.current = isEditing;
+    }
+  }, [isEditing, onEditModeChange]);
+
+
+  useEffect(() => {
+    const hasChanges = fileContent !== editedContent && editedContent !== '';
+    setHasUnsavedChanges(hasChanges);
+    if (onUnsavedChanges) {
+      onUnsavedChanges(hasChanges);
+    }
+  }, [fileContent, editedContent, onUnsavedChanges]);
 
   const loadFileContent = async () => {
     if (!filePath) return;
@@ -66,20 +101,43 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!filePath || !hasUnsavedChanges) return;
     
     try {
       setIsSaving(true);
+      if (onSaving) {
+        onSaving(true);
+      }
       await apiService.saveFile(projectId, filePath, editedContent);
       setFileContent(editedContent);
       setHasUnsavedChanges(false);
+      if (onUnsavedChanges) {
+        onUnsavedChanges(false);
+      }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to save file');
     } finally {
       setIsSaving(false);
+      if (onSaving) {
+        onSaving(false);
+      }
     }
-  };
+  }, [filePath, hasUnsavedChanges, projectId, editedContent, onSaving, onUnsavedChanges]);
+
+  // Listen for save-file custom event from dropdown
+  useEffect(() => {
+    const handleSaveEvent = (event: any) => {
+      if (event.detail && event.detail.filePath === filePath) {
+        handleSave();
+      }
+    };
+
+    window.addEventListener('save-file', handleSaveEvent);
+    return () => {
+      window.removeEventListener('save-file', handleSaveEvent);
+    };
+  }, [filePath, handleSave]);
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -114,10 +172,6 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-
-  const fileName = filePath?.split('/').pop() || '';
-  const language = getLanguageFromFileName(fileName);
-  const canEdit = isEditableFile(fileName);
 
   if (!filePath) {
     return (
@@ -276,9 +330,15 @@ const FileViewer: React.FC<FileViewerProps> = ({ projectId, filePath, showHeader
           onChange={isEditing ? setEditedContent : () => {}}
           language={language}
           fileName={fileName}
-          readOnly={!canEdit || !isEditing}
+          readOnly={!(canEdit || forceEditMode) || !isEditing}
           onSave={handleSave}
         />
+        {/* Debug info */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="text-xs text-gray-500 p-2 border-t border-gray-700">
+            Debug: canEdit={canEdit.toString()}, isEditing={isEditing.toString()}, readOnly={(!canEdit || !isEditing).toString()}, fileName={fileName}
+          </div>
+        )}
       </div>
       
       {/* Footer */}

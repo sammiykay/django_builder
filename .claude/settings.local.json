@@ -25,7 +25,21 @@
       "Bash(./venv/Scripts/python.exe manage.py makemigrations authentication)",
       "Bash(./venv/Scripts/python.exe manage.py makemigrations ai_builder)",
       "Bash(./venv/Scripts/python.exe manage.py migrate)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(./venv/Scripts/python.exe manage.py setup_billing)",
+      "Bash(./venv/Scripts/python.exe test_billing_accuracy.py:*)",
+      "Bash(rm:*)",
+      "Bash(cp:*)",
+      "Bash(curl:*)",
+      "WebFetch(domain:unipayment.readme.io)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:unipayment.io)",
+      "WebFetch(domain:help.unipayment.io)",
+      "Bash(pip install:*)",
+      "Bash(pip freeze)",
+      "Bash(pip3 install:*)",
+      "WebFetch(domain:documenter.getpostman.com)",
+      "WebFetch(domain:nowpayments.io)"
     ],
     "deny": []
   }

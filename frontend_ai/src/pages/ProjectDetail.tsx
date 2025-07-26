@@ -229,15 +229,15 @@ const ProjectDetail: React.FC = () => {
   // Loading State
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="text-center">
           <div className="relative">
             <div className="w-16 h-16 border-4 border-blue-200 dark:border-blue-800 rounded-full animate-spin">
               <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-blue-500 rounded-full animate-spin"></div>
             </div>
           </div>
-          <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">Loading Project</h3>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Getting your workspace ready...</p>
+          <h3 className="mt-4 text-lg font-semibold text-white">Loading Project</h3>
+          <p className="mt-2 text-gray-400">Getting your workspace ready...</p>
         </div>
       </div>
     );
@@ -246,13 +246,13 @@ const ProjectDetail: React.FC = () => {
   // Error State
   if (error && !project) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
-          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl shadow-lg p-8 text-center">
+          <div className="w-16 h-16 bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-8 h-8 text-red-500" />
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Failed to Load Project</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
+          <h2 className="text-xl font-semibold text-white mb-2">Failed to Load Project</h2>
+          <p className="text-gray-400 mb-6">{error}</p>
           <div className="flex gap-3 justify-center">
             <Button onClick={loadProject} variant="primary">
               Try Again
@@ -269,13 +269,13 @@ const ProjectDetail: React.FC = () => {
   // Not Found State
   if (!project) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-lg p-8 text-center">
-          <div className="w-16 h-16 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+      <div className="min-h-screen bg-black flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl shadow-lg p-8 text-center">
+          <div className="w-16 h-16 bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-8 h-8 text-yellow-500" />
           </div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Project Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">The project you're looking for doesn't exist or may have been deleted.</p>
+          <h2 className="text-xl font-semibold text-white mb-2">Project Not Found</h2>
+          <p className="text-gray-400 mb-6">The project you're looking for doesn't exist or may have been deleted.</p>
           <Button onClick={() => navigate('/dashboard')} variant="primary">
             Back to Dashboard
           </Button>
@@ -285,16 +285,16 @@ const ProjectDetail: React.FC = () => {
   }
 
   return (
-    <div className={`h-screen flex flex-col bg-gray-50 dark:bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+    <div className={`h-screen flex flex-col bg-black ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
         {/* Unified Header */}
-        <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex-shrink-0">
+        <header className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-700/50 px-4 py-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             {/* Left Section - Brand & Navigation */}
             <div className="flex items-center space-x-4 min-w-0">
               {/* Brand */}
               <button 
                 onClick={() => navigate('/dashboard')}
-                className="group flex items-center space-x-2 text-gray-900 dark:text-gray-100 hover:opacity-80 transition-opacity"
+                className="group flex items-center space-x-2 text-white hover:opacity-80 transition-opacity"
               >
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
                   <Code className="w-4 h-4 text-white" />
@@ -305,16 +305,16 @@ const ProjectDetail: React.FC = () => {
               </button>
 
               {/* Breadcrumb */}
-              <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+              <div className="flex items-center space-x-2 text-sm text-gray-400">
                 <ArrowLeft className="w-3 h-3" />
                 <button 
                   onClick={() => navigate('/dashboard')}
-                  className="hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
+                  className="hover:text-white transition-colors"
                 >
                   Dashboard
                 </button>
                 <span>/</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100 max-w-32 truncate">
+                <span className="font-medium text-white max-w-32 truncate">
                   {project.name}
                 </span>
               </div>
@@ -322,11 +322,11 @@ const ProjectDetail: React.FC = () => {
               {/* Project Status */}
               <div className="flex items-center space-x-2">
                 <div className={`w-2 h-2 rounded-full ${project.is_running ? 'bg-green-500' : 'bg-gray-400'}`} />
-                <span className={`text-sm font-medium ${project.is_running ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                <span className={`text-sm font-medium ${project.is_running ? 'text-green-400' : 'text-gray-400'}`}>
                   {project.is_running ? 'Running' : 'Stopped'}
                 </span>
                 {project.container_port && (
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                  <span className="text-sm text-gray-400">
                     :{project.container_port}
                   </span>
                 )}
@@ -335,7 +335,7 @@ const ProjectDetail: React.FC = () => {
 
             {/* Center Section - Tabs */}
             <div className="flex items-center">
-              <div className="flex space-x-1 bg-gray-100 dark:bg-gray-700 p-1 rounded-lg">
+              <div className="flex space-x-1 bg-gray-800/50 backdrop-blur-sm border border-gray-700/30 p-1 rounded-lg">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
@@ -346,8 +346,8 @@ const ProjectDetail: React.FC = () => {
                       onClick={() => handleTabChange(tab.id)}
                       className={`relative flex items-center space-x-1.5 px-3 py-1.5 rounded-md font-medium text-sm transition-all duration-200 ${
                         isActive 
-                          ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm' 
-                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+                          ? 'bg-gray-700/50 backdrop-blur-sm text-white shadow-sm border border-gray-600/50' 
+                          : 'text-gray-400 hover:text-white hover:bg-gray-800/30'
                       }`}
                       title={tab.description}
                     >

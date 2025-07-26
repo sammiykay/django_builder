@@ -507,7 +507,7 @@ const FileEditor: React.FC<FileEditorProps> = ({ projectId }) => {
                   }}
                   options={{
                     minimap: { enabled: false },
-                    fontSize: 14,
+                    fontSize: 12,
                     wordWrap: 'on',
                     automaticLayout: true,
                     scrollBeyondLastLine: false,

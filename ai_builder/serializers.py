@@ -4,7 +4,8 @@ from django.db import models
 from .models import (
     Project, ProjectFile, ChatMessage, CommandExecution, ChatThread,
     UserProfile, ProjectSession, ProjectTemplate, ErrorLog, UsageAnalytics,
-    BillingPlan, UserSubscription, TokenUsage, BillingInvoice
+    BillingPlan, UserSubscription, TokenUsage, BillingInvoice,
+    PaymentMethod, Payment, CryptoWallet, PaymentWebhook
 )
 
 class ProjectFileSerializer(serializers.ModelSerializer):
@@ -374,3 +375,97 @@ class BillingDashboardSerializer(serializers.Serializer):
     recent_usage = TokenUsageSerializer(many=True)
     invoices = BillingInvoiceSerializer(many=True)
     available_plans = BillingPlanSerializer(many=True)
+
+
+# Payment Serializers
+class PaymentMethodSerializer(serializers.ModelSerializer):
+    is_crypto = serializers.ReadOnlyField()
+    is_flutterwave = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = PaymentMethod
+        fields = [
+            'id', 'name', 'payment_type', 'is_active', 'is_crypto', 'is_flutterwave',
+            'crypto_symbol', 'crypto_network', 'usd_exchange_rate', 'last_rate_update'
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'last_rate_update']
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.username', read_only=True)
+    payment_method_name = serializers.CharField(source='payment_method.name', read_only=True)
+    is_crypto_payment = serializers.ReadOnlyField()
+    is_confirmed = serializers.ReadOnlyField()
+    purpose_display = serializers.CharField(source='get_purpose_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    
+    class Meta:
+        model = Payment
+        fields = [
+            'id', 'payment_id', 'reference', 'user_name', 'payment_method_name',
+            'purpose', 'purpose_display', 'amount_usd', 'amount_paid', 'currency',
+            'exchange_rate', 'status', 'status_display', 'is_crypto_payment', 'is_confirmed',
+            'crypto_address', 'transaction_hash', 'block_confirmations', 'required_confirmations',
+            'gateway_transaction_id', 'created_at', 'updated_at', 'completed_at', 'expires_at'
+        ]
+        read_only_fields = [
+            'id', 'payment_id', 'reference', 'user_name', 'payment_method_name',
+            'is_crypto_payment', 'is_confirmed', 'purpose_display', 'status_display',
+            'gateway_transaction_id', 'created_at', 'updated_at', 'completed_at'
+        ]
+
+
+class CryptoWalletSerializer(serializers.ModelSerializer):
+    payment_method_name = serializers.CharField(source='payment_method.name', read_only=True)
+    crypto_symbol = serializers.CharField(source='payment_method.crypto_symbol', read_only=True)
+    
+    class Meta:
+        model = CryptoWallet
+        fields = [
+            'id', 'payment_method_name', 'crypto_symbol', 'address', 'is_active',
+            'balance', 'last_balance_check', 'total_received', 'payment_count',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = [
+            'id', 'payment_method_name', 'crypto_symbol', 'balance', 'last_balance_check',
+            'total_received', 'payment_count', 'created_at', 'updated_at'
+        ]
+
+
+class PaymentWebhookSerializer(serializers.ModelSerializer):
+    payment_reference = serializers.CharField(source='payment.reference', read_only=True)
+    
+    class Meta:
+        model = PaymentWebhook
+        fields = [
+            'id', 'webhook_type', 'payment_reference', 'webhook_id', 'event_type',
+            'processed', 'success', 'error_message', 'actions_taken',
+            'signature_valid', 'ip_address', 'created_at', 'processed_at'
+        ]
+        read_only_fields = [
+            'id', 'payment_reference', 'created_at', 'processed_at'
+        ]
+
+
+# Payment Request Serializers
+class FlutterwavePaymentRequestSerializer(serializers.Serializer):
+    plan_id = serializers.IntegerField()
+    purpose = serializers.ChoiceField(
+        choices=['subscription', 'upgrade', 'token_purchase', 'overage'],
+        default='subscription'
+    )
+
+
+class CryptoPaymentRequestSerializer(serializers.Serializer):
+    plan_id = serializers.IntegerField()
+    crypto_type = serializers.ChoiceField(
+        choices=['crypto_bitcoin', 'crypto_ethereum', 'crypto_usdt', 'crypto_usdc']
+    )
+    purpose = serializers.ChoiceField(
+        choices=['subscription', 'upgrade', 'token_purchase', 'overage'],
+        default='subscription'
+    )
+
+
+class PaymentVerificationSerializer(serializers.Serializer):
+    transaction_id = serializers.CharField(max_length=200)
