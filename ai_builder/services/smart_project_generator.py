@@ -9,6 +9,7 @@ from datetime import datetime
 import re
 
 from .claude_service import ClaudeService
+from .validation_service import ValidationService, ValidationLevel, GenerationSequence
 
 # Configure comprehensive logging
 logger = logging.getLogger(__name__)
@@ -30,10 +31,14 @@ class SmartProjectGenerator:
     based on AI analysis of user prompts. Everything is generated dynamically.
     """
     
-    def __init__(self, base_dir: str):
+    def __init__(self, base_dir: str, user=None):
         self.base_dir = Path(base_dir)
-        self.claude_service = ClaudeService()
+        self.claude_service = ClaudeService(user=user)
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.user = user
+        
+        # Initialize validation service
+        self.validation_service = None  # Will be initialized per project
         
         # Initialize error tracking
         self.generation_errors = []
@@ -42,7 +47,9 @@ class SmartProjectGenerator:
             'files_succeeded': 0,
             'files_failed': 0,
             'retries_used': 0,
-            'total_generation_time': 0
+            'total_generation_time': 0,
+            'validation_warnings': 0,
+            'validation_errors': 0
         }
     
     def _track_error(self, error_type: str, error_message: str, context: dict = None):
@@ -2139,11 +2146,44 @@ urlpatterns = [
         
         return '\n'.join(clean_lines) if clean_lines else content
     
-    def _save_file(self, file_path: Path, content: str) -> Dict:
-        """Save content to file and return file info with error tracking."""
+    def _save_file(self, file_path: Path, content: str, component_type: str = None, 
+                  progress_callback=None) -> Dict:
+        """Save content to file with comprehensive validation and error tracking."""
         
         try:
             self._update_stats('files_attempted')
+            
+            # Use the safe validation method
+            result = self._validate_and_save_file(
+                str(file_path), 
+                content, 
+                component_type=component_type,
+                progress_callback=progress_callback
+            )
+            
+            if result['success']:
+                self._update_stats('files_succeeded')
+                return {
+                    'success': True,
+                    'path': str(file_path),
+                    'name': file_path.name,
+                    'size': len(content),
+                    'validation_results': result['validation_results'],
+                    'warnings': result['warnings'],
+                    'errors': result['errors']
+                }
+            else:
+                self._update_stats('files_failed')
+                return {
+                    'success': False,
+                    'error': f"Validation failed for {file_path.name}",
+                    'validation_results': result['validation_results'],
+                    'warnings': result['warnings'], 
+                    'errors': result['errors']
+                }
+                
+        except Exception as e:
+            self._update_stats('files_failed')
             
             # Validate inputs
             if not file_path:
@@ -2870,6 +2910,563 @@ staticfiles/
         except Exception as e:
             logger.error(f"Failed to create minimal config files: {e}")
             return []
+
+    def _initialize_validation_service(self, project_path: str):
+        """Initialize validation service for the project"""
+        try:
+            self.validation_service = ValidationService(project_path)
+            logger.info(f"Validation service initialized for project: {project_path}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize validation service: {e}")
+            self.validation_service = None
+    
+    def _validate_and_save_file(self, file_path: str, content: str, component_type: str = None, 
+                               progress_callback=None) -> Dict:
+        """Safely validate and save a generated file"""
+        result = {
+            'success': False,
+            'validation_results': [],
+            'file_path': file_path,
+            'warnings': [],
+            'errors': []
+        }
+        
+        try:
+            # Ensure validation service is available
+            if not self.validation_service:
+                self._initialize_validation_service(str(Path(file_path).parent))
+            
+            # Check generation sequence if component type is specified
+            if component_type and self.validation_service:
+                sequence_results = self.validation_service.validate_generation_sequence(component_type)
+                result['validation_results'].extend(sequence_results)
+                
+                # Send sequence warnings to user
+                for seq_result in sequence_results:
+                    if seq_result.level == ValidationLevel.WARNING and progress_callback:
+                        progress_callback({
+                            'type': 'sequence_warning',
+                            'message': f"⚠️ {seq_result.message}",
+                            'suggestion': seq_result.suggestion
+                        })
+            
+            # Validate template content before writing (if it looks like a template)
+            if self.validation_service and ('{{' in content or '{%' in content):
+                try:
+                    # Extract template context from content patterns
+                    template_context = self._extract_template_context(content)
+                    rendered_content, template_results = self.validation_service.validate_template(
+                        content, template_context
+                    )
+                    
+                    result['validation_results'].extend(template_results)
+                    
+                    # Use rendered content if validation passed
+                    template_errors = [r for r in template_results if r.level == ValidationLevel.ERROR]
+                    if not template_errors and rendered_content:
+                        content = rendered_content
+                        if progress_callback:
+                            progress_callback({
+                                'type': 'template_validated',
+                                'message': f"✅ Template validation passed for {Path(file_path).name}"
+                            })
+                    elif template_errors and progress_callback:
+                        for error in template_errors:
+                            progress_callback({
+                                'type': 'template_error',
+                                'message': f"🚨 Template error: {error.message}",
+                                'suggestion': error.suggestion
+                            })
+                            
+                except Exception as e:
+                    logger.warning(f"Template validation failed for {file_path}: {e}")
+                    if progress_callback:
+                        progress_callback({
+                            'type': 'template_warning',
+                            'message': f"⚠️ Template validation skipped for {Path(file_path).name}: {str(e)}"
+                        })
+            
+            # Create directory if it doesn't exist
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write the file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            if progress_callback:
+                progress_callback({
+                    'type': 'file_created',
+                    'file': file_path,
+                    'message': f"📄 Created {Path(file_path).name}"
+                })
+            
+            # Validate the written file
+            if self.validation_service and file_path.endswith('.py'):
+                file_results = self.validation_service.validate_file(
+                    file_path, 
+                    check_imports=True, 
+                    run_linting=False  # Skip linting for now to avoid noise
+                )
+                result['validation_results'].extend(file_results)
+                
+                # Categorize results
+                for val_result in file_results:
+                    if val_result.level in [ValidationLevel.ERROR, ValidationLevel.CRITICAL]:
+                        result['errors'].append(val_result)
+                        self.generation_stats['validation_errors'] += 1
+                        if progress_callback:
+                            progress_callback({
+                                'type': 'validation_error',
+                                'message': f"❌ {val_result.message}",
+                                'file': file_path,
+                                'suggestion': val_result.suggestion
+                            })
+                    elif val_result.level == ValidationLevel.WARNING:
+                        result['warnings'].append(val_result)
+                        self.generation_stats['validation_warnings'] += 1
+                        if progress_callback:
+                            progress_callback({
+                                'type': 'validation_warning', 
+                                'message': f"⚠️ {val_result.message}",
+                                'file': file_path,
+                                'suggestion': val_result.suggestion
+                            })
+                    elif val_result.level == ValidationLevel.INFO and 'valid' in val_result.message.lower():
+                        if progress_callback:
+                            progress_callback({
+                                'type': 'validation_success',
+                                'message': f"✅ {Path(file_path).name} validation passed"
+                            })
+            
+            result['success'] = True
+            self.generation_stats['files_succeeded'] += 1
+            
+        except Exception as e:
+            error_msg = f"Failed to write file {file_path}: {str(e)}"
+            logger.error(error_msg)
+            result['errors'].append(error_msg)
+            self.generation_stats['files_failed'] += 1
+            
+            if progress_callback:
+                progress_callback({
+                    'type': 'file_error',
+                    'message': f"❌ Failed to create {Path(file_path).name}: {str(e)}",
+                    'suggestion': "Check file path and permissions"
+                })
+        
+        self.generation_stats['files_attempted'] += 1
+        return result
+    
+    def _extract_template_context(self, content: str) -> Dict:
+        """Extract likely template context from content"""
+        # Simple heuristic to provide common Django template variables
+        context = {
+            'app_name': 'main',
+            'project_name': 'myproject', 
+            'model_name': 'Item',
+            'model_name_lower': 'item',
+            'model_name_plural': 'items',
+            'fields': ['name', 'description'],
+            'user': {'username': 'testuser'}
+        }
+        
+        # Look for specific patterns in the content
+        import re
+        
+        # Extract app names
+        app_matches = re.findall(r'app_name[\'"]?\s*=\s*[\'"](\w+)[\'"]', content)
+        if app_matches:
+            context['app_name'] = app_matches[0]
+        
+        # Extract model names
+        model_matches = re.findall(r'class\s+(\w+)\s*\(.*Model', content)
+        if model_matches:
+            context['model_name'] = model_matches[0]
+            context['model_name_lower'] = model_matches[0].lower()
+            context['model_name_plural'] = model_matches[0].lower() + 's'
+        
+        return context
+    
+    def _run_django_validation(self, project_path: str, progress_callback=None) -> List:
+        """Run comprehensive Django validation on the project"""
+        validation_results = []
+        
+        if not self.validation_service:
+            self._initialize_validation_service(project_path)
+        
+        if self.validation_service:
+            try:
+                if progress_callback:
+                    progress_callback({
+                        'type': 'validation_start',
+                        'message': "🔍 Running Django project validation..."
+                    })
+                
+                # Run Django checks
+                django_results = self.validation_service.validate_project(run_django_check=True)
+                validation_results.extend(django_results)
+                
+                # Report results
+                errors = [r for r in django_results if r.level in [ValidationLevel.ERROR, ValidationLevel.CRITICAL]]
+                warnings = [r for r in django_results if r.level == ValidationLevel.WARNING]
+                
+                if progress_callback:
+                    if errors:
+                        progress_callback({
+                            'type': 'django_validation_errors',
+                            'message': f"❌ Django validation found {len(errors)} errors",
+                            'details': [e.message for e in errors[:3]]  # Show first 3
+                        })
+                    elif warnings:
+                        progress_callback({
+                            'type': 'django_validation_warnings', 
+                            'message': f"⚠️ Django validation found {len(warnings)} warnings",
+                            'details': [w.message for w in warnings[:3]]  # Show first 3
+                        })
+                    else:
+                        progress_callback({
+                            'type': 'django_validation_success',
+                            'message': "✅ Django project validation passed"
+                        })
+                        
+            except Exception as e:
+                logger.warning(f"Django validation failed: {e}")
+                if progress_callback:
+                    progress_callback({
+                        'type': 'validation_warning',
+                        'message': f"⚠️ Django validation skipped: {str(e)}"
+                    })
+        
+        return validation_results
+
+    def generate_project_from_prompt_streaming(self, user_prompt: str, project_id: str, 
+                                             progress_callback=None) -> Dict:
+        """
+        Generate complete Django project structure from user prompt with streaming updates.
+        This version provides real-time updates via a callback function.
+        """
+        
+        def send_status(message, status='generating', progress=None, **kwargs):
+            """Helper to send status updates via callback"""
+            if progress_callback:
+                progress_callback({
+                    'type': 'status',
+                    'message': message,
+                    'status': status,
+                    'progress': progress,
+                    **kwargs
+                })
+        
+        def send_file_created(file_path, content_preview=None, progress=None):
+            """Helper to send file creation updates with full content"""
+            if progress_callback:
+                progress_callback({
+                    'type': 'file_created',
+                    'file': file_path,
+                    'content': content_preview,  # Send full content for real-time viewing
+                    'content_preview': content_preview[:200] + '...' if content_preview and len(content_preview) > 200 else content_preview,
+                    'progress': progress
+                })
+        
+        try:
+            # Validate inputs
+            if not user_prompt or not user_prompt.strip():
+                return {
+                    'success': False,
+                    'error': 'User prompt cannot be empty'
+                }
+            
+            send_status('Analyzing your requirements...', 'analyzing', 5)
+            
+            # Set up project directory
+            project_path = Path(self.base_dir) / project_id
+            project_path.mkdir(parents=True, exist_ok=True)
+            
+            send_status('Analyzing project requirements with AI...', 'analyzing', 10)
+            
+            # Get AI analysis with streaming feedback
+            analysis = self._create_complete_project_plan(user_prompt, project_id)
+            if not analysis.get('success', True):
+                return analysis
+            send_status(f"Creating {analysis.get('project_type', 'custom')} application...", 'generating', 20)
+            
+            # Generate project structure with Claude streaming
+            try:
+                send_status('Starting AI-powered file generation...', 'generating', 25)
+                
+                # Use Claude streaming to generate files token-by-token
+                def streaming_callback(data):
+                    """Handle Claude streaming tokens"""
+                    try:
+                        if not progress_callback:
+                            return
+                            
+                        if data.get('type') == 'file_started':
+                            # New file being created
+                            filename = data.get('filename')
+                            if filename:
+                                progress_callback({
+                                    'type': 'file_started',
+                                    'filename': filename,
+                                    'content': ''
+                                })
+                        elif data.get('type') == 'file_content_token':
+                            # Token-by-token content update
+                            filename = data.get('filename')
+                            if filename:
+                                progress_callback({
+                                    'type': 'file_content_streaming',
+                                    'filename': filename,
+                                    'content': data.get('content', ''),
+                                    'token': data.get('token', '')
+                                })
+                    except Exception as e:
+                        logger.error(f"Error in streaming callback: {e}")
+                        # Don't let callback errors break the generation
+                
+                # Use Claude streaming service for real-time generation
+                send_status('Generating Django files with AI...', 'generating', 30)
+                result = self.claude_service.stream_generate_code(
+                    user_prompt=user_prompt,
+                    project_context=f"Project: {analysis.get('project_name', 'django_project')}",
+                    callback=streaming_callback
+                )
+                
+                files_created = []
+                
+                # Save generated files to disk
+                if result.get('files'):
+                    for file_info in result['files']:
+                        # Handle both 'filename' and 'path' keys for compatibility
+                        filename = file_info.get('filename') or file_info.get('path')
+                        content = file_info.get('content', '')
+                        
+                        if not filename:
+                            logger.warning(f"File info missing filename/path: {file_info}")
+                            continue
+                        
+                        file_path = project_path / filename
+                        file_path.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        # Save file and notify completion
+                        self._save_file(file_path, content, component_type='generated', progress_callback=progress_callback)
+                        files_created.append(str(file_path))
+                        
+                        # Send completion notification
+                        if progress_callback:
+                            progress_callback({
+                                'type': 'file_completed',
+                                'filename': filename,
+                                'content': content
+                            })
+                
+                send_status(f'Generated {len(files_created)} files successfully!', 'completed', 90)
+                
+                # 2. Create main Django project directory and settings
+                send_status('Creating settings.py...', 'generating', 40)
+                settings_content = self._generate_django_settings(analysis, analysis.get('project_name', 'django_project'))
+                project_name = analysis.get('project_name', 'django_project')
+                main_project_dir = project_path / project_name
+                main_project_dir.mkdir(exist_ok=True)
+                
+                settings_file = main_project_dir / 'settings.py'
+                self._save_file(settings_file, settings_content, component_type='settings', progress_callback=progress_callback)
+                files_created.append(str(settings_file))
+                send_file_created(f'{project_name}/settings.py', settings_content, 45)
+                
+                # 3. Create other Django project files
+                send_status('Creating URL configuration...', 'generating', 50)
+                urls_content = self._generate_main_urls_file(analysis)
+                urls_file = main_project_dir / 'urls.py'
+                self._save_file(urls_file, urls_content, component_type='urls', progress_callback=progress_callback)
+                files_created.append(str(urls_file))
+                send_file_created(f'{project_name}/urls.py', urls_content, 55)
+                
+                # Create __init__.py files
+                init_files = [
+                    main_project_dir / '__init__.py',
+                ]
+                for init_file in init_files:
+                    self._save_file(init_file, '')
+                    files_created.append(str(init_file))
+                
+                # 4. Generate main application
+                app_name = analysis.get('main_app', 'main')
+                send_status(f'Creating {app_name} application...', 'generating', 60)
+                app_files = self._generate_main_app_with_streaming(
+                    project_path, app_name, analysis, send_file_created, 60, 80
+                )
+                files_created.extend(app_files)
+                
+                # 5. Create templates with streaming
+                send_status('Creating templates...', 'generating', 80)
+                template_files = self._create_templates_with_streaming(
+                    project_path, analysis, send_file_created, 80, 90
+                )
+                files_created.extend(template_files)
+                
+                # 6. Create requirements.txt and other config files
+                send_status('Creating configuration files...', 'generating', 90)
+                config_files = self._create_config_files_with_streaming(
+                    project_path, analysis, send_file_created, 90, 95
+                )
+                files_created.extend(config_files)
+                
+                # 7. Run comprehensive validation
+                send_status('Running project validation...', 'validating', 95)
+                validation_results = self._run_django_validation(str(project_path), progress_callback)
+                
+                # Check for critical errors
+                critical_errors = [r for r in validation_results if r.level in [ValidationLevel.ERROR, ValidationLevel.CRITICAL]]
+                if critical_errors:
+                    send_status(f'⚠️ Project generated with {len(critical_errors)} validation errors', 'completed_with_warnings', 100)
+                else:
+                    send_status('✅ Project generation completed successfully!', 'completed', 100)
+                
+                return {
+                    'success': True,
+                    'files': [{'path': f} for f in files_created],
+                    'message': f'Generated {len(files_created)} files for your {analysis.get("project_type", "Django")} project',
+                    'project_id': project_id,
+                    'analysis': analysis
+                }
+                
+            except Exception as e:
+                logger.error(f"Error during streaming generation: {e}")
+                # Fallback to original method
+                send_status('Switching to fallback generation...', 'generating', 50)
+                return self.generate_project_from_prompt(user_prompt, project_id)
+                
+        except Exception as e:
+            send_status(f'Generation failed: {str(e)}', 'error', 0)
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+    def _generate_main_app_with_streaming(self, project_path, app_name, analysis, send_file_created, start_progress, end_progress):
+        """Generate main app files with streaming updates"""
+        files_created = []
+        progress_step = (end_progress - start_progress) / 6  # 6 files to create
+        current_progress = start_progress
+        
+        app_path = project_path / app_name
+        app_path.mkdir(exist_ok=True)
+        
+        # Create __init__.py
+        init_file = app_path / '__init__.py'
+        self._save_file(init_file, '')
+        files_created.append(str(init_file))
+        current_progress += progress_step
+        send_file_created(f'{app_name}/__init__.py', '', current_progress)
+        
+        # Create models.py (First in sequence)
+        models_content = self._generate_models_file(analysis)
+        models_file = app_path / 'models.py'
+        self._save_file(models_file, models_content, component_type='models', progress_callback=send_file_created)
+        files_created.append(str(models_file))
+        current_progress += progress_step
+        send_file_created(f'{app_name}/models.py', models_content, current_progress)
+        
+        # Create views.py (After models)
+        views_content = self._generate_views_file(analysis)
+        views_file = app_path / 'views.py'
+        self._save_file(views_file, views_content, component_type='views', progress_callback=send_file_created)
+        files_created.append(str(views_file))
+        current_progress += progress_step
+        send_file_created(f'{app_name}/views.py', views_content, current_progress)
+        
+        # Create urls.py (After views)
+        urls_content = self._generate_app_urls_file(analysis)
+        urls_file = app_path / 'urls.py'
+        self._save_file(urls_file, urls_content, component_type='urls', progress_callback=send_file_created)
+        files_created.append(str(urls_file))
+        current_progress += progress_step
+        send_file_created(f'{app_name}/urls.py', urls_content, current_progress)
+        
+        # Create admin.py
+        admin_content = self._generate_admin_file(analysis)
+        admin_file = app_path / 'admin.py'
+        self._save_file(admin_file, admin_content)
+        files_created.append(str(admin_file))
+        current_progress += progress_step
+        send_file_created(f'{app_name}/admin.py', admin_content, current_progress)
+        
+        # Create apps.py
+        apps_content = self._generate_apps_file(analysis, app_name)
+        apps_file = app_path / 'apps.py'
+        self._save_file(apps_file, apps_content)
+        files_created.append(str(apps_file))
+        current_progress += progress_step
+        send_file_created(f'{app_name}/apps.py', apps_content, current_progress)
+        
+        return files_created
+    
+    def _create_templates_with_streaming(self, project_path, analysis, send_file_created, start_progress, end_progress):
+        """Create templates with streaming updates"""
+        files_created = []
+        
+        # Create templates structure
+        templates_path = project_path / 'templates'
+        templates_path.mkdir(exist_ok=True)
+        
+        app_name = analysis.get('main_app', 'main')
+        app_templates_path = templates_path / app_name
+        app_templates_path.mkdir(exist_ok=True)
+        
+        progress_step = (end_progress - start_progress) / 3  # 3 template files
+        current_progress = start_progress
+        
+        # Create base.html
+        base_content = self._generate_base_template(analysis)
+        base_file = app_templates_path / 'base.html'
+        self._save_file(base_file, base_content)
+        files_created.append(str(base_file))
+        current_progress += progress_step
+        send_file_created(f'templates/{app_name}/base.html', base_content, current_progress)
+        
+        # Create home.html
+        home_content = self._generate_home_template(analysis)
+        home_file = app_templates_path / 'home.html'
+        self._save_file(home_file, home_content)
+        files_created.append(str(home_file))
+        current_progress += progress_step
+        send_file_created(f'templates/{app_name}/home.html', home_content, current_progress)
+        
+        # Create form template
+        form_content = self._generate_form_template(analysis)
+        form_file = app_templates_path / 'create.html'
+        self._save_file(form_file, form_content)
+        files_created.append(str(form_file))
+        current_progress += progress_step
+        send_file_created(f'templates/{app_name}/create.html', form_content, current_progress)
+        
+        return files_created
+    
+    def _create_config_files_with_streaming(self, project_path, analysis, send_file_created, start_progress, end_progress):
+        """Create configuration files with streaming updates"""
+        files_created = []
+        
+        progress_step = (end_progress - start_progress) / 2  # 2 config files
+        current_progress = start_progress
+        
+        # Create requirements.txt
+        requirements_content = self._generate_requirements_file(analysis)
+        requirements_file = project_path / 'requirements.txt'
+        self._save_file(requirements_file, requirements_content)
+        files_created.append(str(requirements_file))
+        current_progress += progress_step
+        send_file_created('requirements.txt', requirements_content, current_progress)
+        
+        # Create Dockerfile
+        dockerfile_content = self._generate_dockerfile(analysis)
+        dockerfile = project_path / 'Dockerfile'
+        self._save_file(dockerfile, dockerfile_content)
+        files_created.append(str(dockerfile))
+        current_progress += progress_step
+        send_file_created('Dockerfile', dockerfile_content, current_progress)
+        
+        return files_created
 
 
     # Helper function to test the generator

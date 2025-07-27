@@ -16,10 +16,12 @@ interface FileTreeProps {
   projectId: string;
   onFileSelect: (filePath: string) => void;
   selectedFile?: string;
+  liveFiles?: Map<string, string>;
 }
 
-const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFile }) => {
+const FileTree = React.forwardRef<any, FileTreeProps>(({ projectId, onFileSelect, selectedFile, liveFiles }, ref) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [liveMergedTree, setLiveMergedTree] = useState<FileNode[]>([]);
   const [filteredTree, setFilteredTree] = useState<FileNode[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -109,6 +111,11 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
     return rootNodes;
   };
 
+  // Expose refresh function to parent
+  React.useImperativeHandle(ref, () => ({
+    refreshFileTree: loadFileTree
+  }));
+
   const filterTree = (nodes: FileNode[], query: string): FileNode[] => {
     return nodes.reduce<FileNode[]>((acc, node) => {
       if (node.name.toLowerCase().includes(query)) {
@@ -134,13 +141,52 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
     });
   };
 
+  // Merge live files with existing file tree
+  useEffect(() => {
+    if (!liveFiles || liveFiles.size === 0) {
+      setLiveMergedTree(filteredTree);
+      return;
+    }
+
+    // Add live files to the tree
+    const liveFilesList = Array.from(liveFiles.keys()).map(path => ({ path }));
+    const mergedTree = buildTreeFromFiles([
+      ...fileTree.map(node => ({ path: node.path })),
+      ...liveFilesList
+    ]);
+    
+    setLiveMergedTree(mergedTree);
+  }, [filteredTree, liveFiles, fileTree]);
+
   const loadFileTree = async () => {
     try {
       setIsLoading(true);
       const response = await apiService.getFilesystemFiles(projectId);
       const files = response || [];
       
-      const tree = buildTreeFromFiles(files);
+      console.log('🌳 FileTree API response:', {
+        projectId,
+        fileCount: files.length,
+        firstFewFiles: files.slice(0, 5).map(f => f.path),
+        allPaths: files.map(f => f.path)
+      });
+      
+      // Validate that all paths are relative to project
+      const validFiles = files.filter(file => {
+        const path = file.path;
+        // Check if path looks like it's trying to escape project directory
+        if (path.includes('..') || path.startsWith('/')) {
+          console.warn('🚨 Suspicious file path detected:', path);
+          return false;
+        }
+        return true;
+      });
+      
+      if (validFiles.length !== files.length) {
+        console.warn(`🚨 Filtered out ${files.length - validFiles.length} suspicious paths`);
+      }
+      
+      const tree = buildTreeFromFiles(validFiles);
       setFileTree(tree);
       setFilteredTree(tree);
       
@@ -249,6 +295,11 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
             {node.name}
           </span>
           
+          {/* Live indicator for streaming files */}
+          {liveFiles && liveFiles.has(node.path) && (
+            <div className="ml-2 w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+          )}
+          
           {/* File count for directories */}
           {node.type === 'directory' && node.children && (
             <Badge variant="neutral" size="sm" className="ml-auto">
@@ -301,9 +352,9 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
       
       {/* File Tree */}
       <div className="flex-1 overflow-y-auto py-2">
-        {Array.isArray(filteredTree) && filteredTree.length > 0 ? (
+        {Array.isArray(liveMergedTree) && liveMergedTree.length > 0 ? (
           <div className="space-y-1 px-1 sm:px-2">
-            {filteredTree.filter(node => node && node.path).map(node => renderFileNode(node))}
+            {liveMergedTree.filter(node => node && node.path).map(node => renderFileNode(node))}
           </div>
         ) : searchQuery.trim() ? (
           <div className="p-6 text-center">
@@ -321,6 +372,8 @@ const FileTree: React.FC<FileTreeProps> = ({ projectId, onFileSelect, selectedFi
       </div>
     </div>
   );
-};
+});
+
+FileTree.displayName = 'FileTree';
 
 export default FileTree;

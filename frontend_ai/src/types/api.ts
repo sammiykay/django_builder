@@ -62,12 +62,19 @@ export interface ProjectFile {
 }
 
 export interface ChatMessage {
-  id: string;
-  thread: string;
-  message: string;
-  response: string;
-  is_error: boolean;
+  id: string | number;
+  thread?: string;
+  role: 'user' | 'assistant';
+  content: string;
+  message?: string;
+  response?: string;
+  is_error?: boolean;
   created_at: string;
+  messageType?: string;
+  operationType?: string;
+  streaming?: boolean;
+  files_modified?: string[];
+  code_changes?: Record<string, any>;
 }
 
 export interface CommandExecution {

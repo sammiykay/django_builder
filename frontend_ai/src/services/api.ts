@@ -570,6 +570,54 @@ class ApiService {
     const response = await this.api.get('/api/payments/history/');
     return response.data;
   }
+
+  // New Usage Analytics Methods
+  async getUsageAnalyticsDashboard(): Promise<any> {
+    const response = await this.api.get('/api/usage-analytics/dashboard_stats/');
+    return response.data;
+  }
+
+  async getUsageHistory(params?: { start_date?: string; end_date?: string; usage_type?: string }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value) searchParams.append(key, value);
+      });
+    }
+    const response = await this.api.get(`/api/usage-analytics/usage_history/?${searchParams}`);
+    return response.data;
+  }
+
+  async exportUsageData(params?: { start_date?: string; end_date?: string }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value) searchParams.append(key, value);
+      });
+    }
+    const response = await this.api.get(`/api/usage-analytics/export_usage/?${searchParams}`, {
+      responseType: 'blob'
+    });
+    return response;
+  }
+
+  // Billing Management Methods
+  async getCurrentSubscriptionDetails(): Promise<any> {
+    const response = await this.api.get('/api/billing-management/current_subscription/');
+    return response.data;
+  }
+
+  async getAvailablePlans(): Promise<any> {
+    const response = await this.api.get('/api/billing-management/available_plans/');
+    return response.data;
+  }
+
+  async upgradePlan(planId: number): Promise<any> {
+    const response = await this.api.post('/api/billing-management/upgrade_plan/', {
+      plan_id: planId
+    });
+    return response.data;
+  }
 }
 
 export const apiService = new ApiService();

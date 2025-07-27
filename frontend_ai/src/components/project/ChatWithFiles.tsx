@@ -32,11 +32,12 @@ import '../../styles/design-system.css';
 
 interface ChatWithFilesProps {
   projectId: string;
+  initialPrompt?: string;
 }
 
 type ViewMode = 'split' | 'chat' | 'files';
 
-const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
+const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId, initialPrompt }) => {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [chatWidth, setChatWidth] = useState(50);
@@ -57,8 +58,13 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
   const [filesIsSaving, setFilesIsSaving] = useState(false);
   
   const [fileContent, setFileContent] = useState<string>('');
+  
+  // Live file streaming state
+  const [liveFiles, setLiveFiles] = useState<Map<string, string>>(new Map());
+  const [currentStreamingFile, setCurrentStreamingFile] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileTreeRef = useRef<any>(null);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -115,6 +121,60 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
     setSelectedFile(filePath);
     setShowOptionsMenu(false); // Close options menu when selecting new file
   };
+
+  // Handle live file updates from streaming
+  const handleLiveFileUpdate = useCallback((event: CustomEvent) => {
+    const { filename, content, action, token } = event.detail;
+    
+    console.log('🔴 ChatWithFiles received live file update:', { filename, action, contentLength: content?.length || 0 });
+    
+    // Update live files state
+    setLiveFiles(prev => {
+      const newMap = new Map(prev);
+      if (action === 'create' || action === 'update') {
+        newMap.set(filename, content || '');
+        
+        // Auto-select the file being streamed if no file is selected
+        if (!selectedFile || currentStreamingFile === filename) {
+          setSelectedFile(filename);
+          setCurrentStreamingFile(filename);
+        }
+        
+        // Trigger file tree refresh to show new files
+        if (action === 'create' && fileTreeRef.current?.refreshFileTree) {
+          fileTreeRef.current.refreshFileTree();
+        }
+      }
+      return newMap;
+    });
+    
+    // If this is the currently selected file, update the content in real-time
+    if (selectedFile === filename || currentStreamingFile === filename) {
+      // Dispatch event to FileViewer to update content in real-time
+      window.dispatchEvent(new CustomEvent('liveFileContentUpdate', {
+        detail: {
+          filename,
+          content: content || '',
+          token,
+          isStreaming: action === 'update'
+        }
+      }));
+    }
+  }, [selectedFile, currentStreamingFile]);
+
+  // Set up live file update listener
+  useEffect(() => {
+    const listener = (event: Event) => handleLiveFileUpdate(event as CustomEvent);
+    window.addEventListener('liveFileUpdate', listener);
+    return () => window.removeEventListener('liveFileUpdate', listener);
+  }, [handleLiveFileUpdate]);
+
+  // Reset streaming state when file changes
+  useEffect(() => {
+    if (selectedFile !== currentStreamingFile) {
+      setCurrentStreamingFile(null);
+    }
+  }, [selectedFile, currentStreamingFile]);
 
   // Handle file operations
   const handleCopyFile = async () => {
@@ -404,7 +464,7 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
       <div className="flex-1 flex overflow-hidden">
         {viewMode === 'chat' && (
           <div className="w-full h-full">
-            <ChatInterface projectId={projectId} />
+            <ChatInterface projectId={projectId} initialPrompt={initialPrompt} />
           </div>
         )}
 
@@ -420,9 +480,11 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
               </div>
               <div className="flex-1 overflow-auto">
                 <FileTree
+                  ref={fileTreeRef}
                   projectId={projectId}
                   onFileSelect={handleFileSelect}
                   selectedFile={selectedFile}
+                  liveFiles={liveFiles}
                 />
               </div>
             </div>
@@ -442,6 +504,11 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
                         {getCurrentEditState() && (
                           <span className="px-2 py-1 text-xs bg-green-600/20 text-green-400 border border-green-500/30 rounded-md">
                             Editing
+                          </span>
+                        )}
+                        {currentStreamingFile === selectedFile && (
+                          <span className="px-2 py-1 text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-md animate-pulse">
+                            Streaming...
                           </span>
                         )}
                       </div>
@@ -494,6 +561,8 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
                       onEditModeChange={setCurrentEditState}
                       onUnsavedChanges={setCurrentUnsavedChanges}
                       onSaving={setCurrentSavingState}
+                      liveContent={liveFiles.get(selectedFile)}
+                      isStreaming={currentStreamingFile === selectedFile}
                     />
                   </div>
                 </>
@@ -528,7 +597,7 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
                 </h3>
               </div>
               <div className="flex-1 overflow-hidden">
-                <ChatInterface projectId={projectId} />
+                <ChatInterface projectId={projectId} initialPrompt={initialPrompt} />
               </div>
             </div>
 
@@ -555,9 +624,11 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
                 </div>
                 <div className="flex-1 overflow-auto">
                   <FileTree
+                    ref={fileTreeRef}
                     projectId={projectId}
                     onFileSelect={handleFileSelect}
                     selectedFile={selectedFile}
+                    liveFiles={liveFiles}
                   />
                 </div>
               </div>
@@ -577,6 +648,11 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
                           {getCurrentEditState() && (
                             <span className="px-2 py-1 text-xs bg-green-600/20 text-green-400 border border-green-500/30 rounded-md">
                               Editing
+                            </span>
+                          )}
+                          {currentStreamingFile === selectedFile && (
+                            <span className="px-2 py-1 text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-md animate-pulse">
+                              Streaming...
                             </span>
                           )}
                         </div>
@@ -629,6 +705,8 @@ const ChatWithFiles: React.FC<ChatWithFilesProps> = ({ projectId }) => {
                         onEditModeChange={setCurrentEditState}
                         onUnsavedChanges={setCurrentUnsavedChanges}
                         onSaving={setCurrentSavingState}
+                        liveContent={liveFiles.get(selectedFile)}
+                        isStreaming={currentStreamingFile === selectedFile}
                       />
                     </div>
                   </>

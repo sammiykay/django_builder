@@ -20,6 +20,7 @@ import Button from '../ui/Button';
 import Badge from '../ui/Badge';
 import ProjectSidebar from './ProjectSidebar';
 import SidebarHoverZone from './SidebarHoverZone';
+import UsageAlert from '../billing/UsageAlert';
 import '../../styles/design-system.css';
 
 interface AppLayoutProps {
@@ -404,6 +405,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children, className = '' }) => {
           )}
         </div>
       </header>
+
+      {/* Usage Alert - Global notification for token usage */}
+      <div className="relative z-40">
+        <UsageAlert 
+          onUpgradeClick={() => navigate('/billing')}
+          className="mx-4 mt-4 lg:mx-8"
+        />
+      </div>
 
       {/* Main Content */}
       <main className="flex-1">

@@ -25,11 +25,12 @@ class EnhancedSmartGenerator:
     Provides incremental updates and real-time feedback like Bolt.new
     """
     
-    def __init__(self, base_dir: str, websocket_callback: Optional[Callable] = None):
+    def __init__(self, base_dir: str, websocket_callback: Optional[Callable] = None, user=None):
         self.base_dir = Path(base_dir)
-        self.claude_service = ClaudeService()
+        self.claude_service = ClaudeService(user=user)
         self.websocket_callback = websocket_callback
         self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.user = user
         
         # Generation state
         self.current_project_id = None

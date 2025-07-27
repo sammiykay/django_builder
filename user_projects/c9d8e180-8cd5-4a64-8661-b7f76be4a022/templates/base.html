@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}A modern blogging platform{% endblock %}">
+    <title>{% block title %}Blog Platform{% endblock %} | BlogPlatform</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{% static 'images/favicon.ico' %}">
+    
+    <!-- PWA -->
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="theme-color" content="#3B82F6">
+    
+    <!-- Tailwind and Custom CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="{% static 'css/styles.css' %}" rel="stylesheet">
+    
+    <!-- Alpine.js for Interactivity -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-gray-50 dark:bg-gray-900" x-data="{ darkMode: false, mobileMenu: false, userMenu: false, notifications: false }">
+    <!-- Navigation -->
+    <nav class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <a href="{% url 'home' %}" class="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                            BlogPlatform
+                        </a>
+                    </div>
+                    
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <a href="{% url 'blog:posts' %}" class="nav-link">Posts</a>
+                        <a href="{% url 'blog:categories' %}" class="nav-link">Categories</a>
+                        <a href="{% url 'blog:tags' %}" class="nav-link">Tags</a>
+                        <a href="{% url 'blog:authors' %}" class="nav-link">Authors</a>
+                    </div>
+                </div>
+                
+                <div class="hidden sm:ml-6 sm:flex sm:items-center">
+                    <!-- Search -->
+                    <div class="relative">
+                        <input type="search" 
+                               class="w-full px-4 py-2 rounded-lg border dark:bg-gray-700 dark:border-gray-600"
+                               placeholder="Search posts...">
+                    </div>
+                    
+                    <!-- Theme Toggle -->
+                    <button @click="darkMode = !darkMode" 
+                            class="ml-3 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                        <span x-show="!darkMode">🌙</span>
+                        <span x-show="darkMode">☀️</span>
+                    </button>
+                    
+                    <!-- User Menu -->
+                    {% if user.is_authenticated %}
+                    <div class="ml-3 relative" x-data="{ open: false }">
+                        <button @click="open = !open" 
+                                class="flex items-center">
+                            <img class="h-8 w-8 rounded-full" 
+                                 src="{{ user.profile.avatar.url|default:'https://via.placeholder.com/150' }}" 
+                                 alt="{{ user.username }}">
+                        </button>
+                        
+                        <div x-show="open" 
+                             class="absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white dark:bg-gray-800">
+                            <a href="{% url 'users:profile' %}" class="dropdown-item">Profile</a>
+                            <a href="{% url 'blog:my-posts' %}" class="dropdown-item">My Posts</a>
+                            <a href="{% url 'users:settings' %}" class="dropdown-item">Settings</a>
+                            <a href="{% url 'logout' %}" class="dropdown-item">Logout</a>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="ml-3 flex items-center space-x-4">
+                        <a href="{% url 'login' %}" class="btn-primary">Login</a>
+                        <a href="{% url 'register' %}" class="btn-secondary">Register</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" 
+         class="fixed top-4 right-4 z-50"
+         x-data="{ notifications: [] }">
+        {% if messages %}
+        {% for message in messages %}
+        <div class="toast-notification bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 mb-4">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">About</h3>
+                    <p class="text-gray-600 dark:text-gray-400">
+                        A modern blogging platform for sharing your thoughts with the world.
+                    </p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Quick Links</h3>
+                    <ul class="space-y-2">
+                        <li><a href="{% url 'about' %}" class="footer-link">About Us</a></li>
+                        <li><a href="{% url 'contact' %}" class="footer-link">Contact</a></li>
+                        <li><a href="{% url 'privacy' %}" class="footer-link">Privacy Policy</a></li>
+                        <li><a href="{% url 'terms' %}" class="footer-link">Terms of Service</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Follow Us</h3>
+                    <div class="flex space-x-4">
+                        <a href="#" class="social-link">Twitter</a>
+                        <a href="#" class="social-link">Facebook</a>
+                        <a href="#" class="social-link">Instagram</a>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Newsletter</h3>
+                    <form class="space-y-4">
+                        <input type="email" 
+                               class="w-full px-4 py-2 rounded-lg border dark:bg-gray-700 dark:border-gray-600"
+                               placeholder="Enter your email">
+                        <button type="submit" class="btn-primary w-full">Subscribe</button>
+                    </form>
+                </div>
+            </div>
+            <div class="mt-8 pt-8 border-t border-gray-200 dark:border-gray-700 text-center">
+                <p class="text-gray-600 dark:text-gray-400">
+                    © {% now "Y" %} BlogPlatform. All rights reserved.
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Core JavaScript -->
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

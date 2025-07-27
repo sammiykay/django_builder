@@ -20,13 +20,14 @@ import {
 interface DailyUsage {
   day: string;
   tokens: number;
-  cost_cents: number;
+  cost_cents?: number;
+  requests?: number;
 }
 
 interface UsageByType {
   usage_type: string;
   tokens: number;
-  cost_cents: number;
+  cost_cents?: number;
 }
 
 interface ChartData {
@@ -34,22 +35,43 @@ interface ChartData {
   usage_by_type: UsageByType[];
 }
 
+interface TokenUsageChartProps {
+  data?: DailyUsage[] | null;
+  height?: number;
+  showControls?: boolean;
+  chartType?: 'line' | 'bar';
+}
+
 const COLORS = [
   '#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#00ff00', 
   '#ff00ff', '#00ffff', '#ff0000', '#0000ff', '#ffff00'
 ];
 
-export const TokenUsageChart: React.FC = () => {
+export const TokenUsageChart: React.FC<TokenUsageChartProps> = ({ 
+  data = null, 
+  height = 320, 
+  showControls = true,
+  chartType = 'line'
+}) => {
   const [chartData, setChartData] = useState<ChartData | null>(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState(30);
   const [viewType, setViewType] = useState<'daily' | 'usage_type'>('daily');
 
   useEffect(() => {
-    fetchChartData();
-  }, [timeRange]);
+    if (data) {
+      // If external data is provided, use it directly
+      setChartData({ daily_usage: data, usage_by_type: [] });
+      setLoading(false);
+    } else {
+      // Otherwise fetch data from API
+      fetchChartData();
+    }
+  }, [data, timeRange]);
 
   const fetchChartData = async () => {
+    if (data) return; // Don't fetch if external data is provided
+    
     try {
       setLoading(true);
       const response = await apiService.getTokenUsageChart(timeRange);
@@ -92,11 +114,15 @@ export const TokenUsageChart: React.FC = () => {
     );
   }
 
+  const containerStyle = showControls ? "p-6" : "";
+  const chartHeight = height;
+
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold">Token Usage Analytics</h3>
-        <div className="flex items-center gap-2">
+    <Card className={containerStyle}>
+      {showControls && (
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold">Token Usage Analytics</h3>
+          <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
             <Button
               onClick={() => setViewType('daily')}
@@ -151,13 +177,15 @@ export const TokenUsageChart: React.FC = () => {
               90d
             </Button>
           </div>
+          </div>
         </div>
-      </div>
+      )}
+      
       <div>
         {viewType === 'daily' ? (
           <div className="space-y-4">
             {chartData.daily_usage.length > 0 ? (
-              <div className="h-80">
+              <div style={{ height: chartHeight }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData.daily_usage}>
                     <CartesianGrid strokeDasharray="3 3" />

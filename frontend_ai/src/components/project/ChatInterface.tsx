@@ -16,6 +16,7 @@ import {
   Code2,
   Zap
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { apiService } from "../../services/api";
 import { aiStreamingService } from "../../services/aiStreamingService";
 import { ChatMessage } from "../../types/api";
@@ -26,9 +27,11 @@ import "../../styles/design-system.css";
 
 interface ChatInterfaceProps {
   projectId: string;
+  initialPrompt?: string;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId, initialPrompt }) => {
+  const location = useLocation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -44,8 +47,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
   const [generationMessages, setGenerationMessages] = useState<string[]>([]);
   const [liveFiles, setLiveFiles] = useState<{[filename: string]: string}>({});
   const [streamingConnected, setStreamingConnected] = useState(false);
+  const [typingIndicator, setTypingIndicator] = useState(false);
+  const [currentStreamingMessage, setCurrentStreamingMessage] = useState<string>('');
+  const [generationProgress, setGenerationProgress] = useState({
+    status: 'idle',
+    progress: 0,
+    currentFile: '',
+    filesCreated: [] as string[]
+  });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const currentStreamId = useRef<string | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,46 +70,159 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
   useEffect(() => {
     initializeChat();
     initializeAIStreaming();
-    
-    // Listen for autostart events from project creation
-    const handleAutostart = (event: CustomEvent) => {
-      if (event.detail.projectId === projectId) {
-        const welcomeMessage: ChatMessage = {
-          id: Date.now(),
-          role: "assistant",
-          content: event.detail.message,
-          message_type: "normal",
-          timestamp: new Date().toISOString(),
-          tokens_used: null,
-          processing_time: null,
-          is_error_report: false,
-          error_type: "",
-          error_source: "",
-          files_modified: [],
-          code_changes: {},
-          created_at: new Date().toISOString(),
-        };
-        setMessages(prev => [...prev, welcomeMessage]);
-      }
+  }, [projectId]);
+
+  // Auto-trigger initial prompt for project generation
+  
+useEffect(() => {
+  if (
+    initialPrompt &&
+    initialPrompt.trim() &&
+    messages.length === 0 &&
+    !isLoadingHistory
+  ) {
+    const userMessage: ChatMessage = {
+      id: Date.now(),
+      role: 'user',
+      content: initialPrompt.trim(),
+      created_at: new Date().toISOString(),
     };
 
-    window.addEventListener('project-autostart', handleAutostart as EventListener);
+    setMessages([userMessage]);
+    setInputMessage('');
+
+    // Trigger streaming generation
+    handleStreamingGeneration(initialPrompt.trim());
+  }
+}, [initialPrompt, messages.length, isLoadingHistory]);
+
+useEffect(() => {
+  const handleAutostart = (event: Event) => {
+    const customEvent = event as CustomEvent;
+
+    if (customEvent.detail.projectId === projectId) {
+      const welcomeMessage: ChatMessage = {
+        id: Date.now(),
+        role: 'assistant',
+        content: customEvent.detail.message,
+        message_type: 'normal',
+        timestamp: new Date().toISOString(),
+        tokens_used: null,
+        processing_time: null,
+        is_error_report: false,
+        error_type: '',
+        error_source: '',
+        files_modified: [],
+        code_changes: {},
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, welcomeMessage]);
+    }
+  };
+
+  window.addEventListener('project-autostart', handleAutostart);
+
+  return () => {
+    window.removeEventListener('project-autostart', handleAutostart);
+  };
+}, [projectId]);
+
+  // Handle URL prompt parameter from Dashboard
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const promptFromUrl = urlParams.get('prompt');
     
-    return () => {
-      window.removeEventListener('project-autostart', handleAutostart as EventListener);
-    };
-  }, [projectId]);
+    console.log('🔍 URL parsing debug:', {
+      fullUrl: window.location.href,
+      search: location.search,
+      urlParams: Object.fromEntries(urlParams.entries()),
+      promptFromUrl,
+      decodedPrompt: promptFromUrl ? decodeURIComponent(promptFromUrl) : null
+    });
+    
+    console.log('🔍 Dashboard prompt check:', {
+      promptFromUrl,
+      hasPrompt: !!promptFromUrl,
+      messagesLength: messages.length,
+      isLoadingHistory,
+      streamingConnected,
+      allConditionsMet: promptFromUrl && promptFromUrl.trim() && messages.length === 0 && !isLoadingHistory && streamingConnected
+    });
+    
+    // Check if we should auto-start (allow if only welcome message exists)
+    const hasOnlyWelcomeMessage = messages.length === 1 && messages[0]?.role === 'assistant';
+    const shouldAutoStart = promptFromUrl &&
+      promptFromUrl.trim() &&
+      (messages.length === 0 || hasOnlyWelcomeMessage) &&
+      !isLoadingHistory &&
+      streamingConnected;
+    
+    console.log('🔍 Auto-start evaluation:', {
+      hasOnlyWelcomeMessage,
+      shouldAutoStart,
+      currentMessages: messages.map(m => ({ role: m.role, content: m.content?.substring(0, 50) + '...' }))
+    });
+    
+    if (shouldAutoStart) {
+      console.log('🎯 Auto-starting generation from Dashboard prompt:', promptFromUrl);
+      
+      const userMessage: ChatMessage = {
+        id: Date.now(),
+        role: 'user',
+        content: promptFromUrl.trim(),
+        message_type: 'normal',
+        timestamp: new Date().toISOString(),
+        tokens_used: null,
+        processing_time: null,
+        is_error_report: false,
+        error_type: '',
+        error_source: '',
+        files_modified: [],
+        code_changes: {},
+        created_at: new Date().toISOString(),
+      };
+
+      setMessages([userMessage]);
+      setInputMessage('');
+
+      // Auto-start streaming with the Dashboard prompt
+      const success = aiStreamingService.startGeneration(promptFromUrl.trim());
+      if (success) {
+        console.log('🚀 Successfully started auto-generation from Dashboard');
+      } else {
+        console.warn('⚠️ Failed to start auto-generation, falling back to manual');
+      }
+      
+      // Clean up the URL parameter after processing
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete('prompt');
+      window.history.replaceState({}, '', newUrl.toString());
+      console.log('🧹 Cleaned prompt from URL');
+    }
+  }, [location.search, messages.length, isLoadingHistory, streamingConnected]);
 
   const initializeAIStreaming = () => {
     // Connect to AI streaming service
     aiStreamingService.connect(projectId);
     
-    // Subscribe to file changes
+    // Subscribe to file changes - real-time like bolt.new
     const unsubscribeFiles = aiStreamingService.subscribeToFiles((file) => {
       console.log('📁 Live file update:', file);
+      
+      // Update live files for real-time viewing in file explorer
       setLiveFiles(prev => ({
         ...prev,
-        [file.filename]: file.content
+        [file.filename || file.file || 'unknown']: file.content
+      }));
+      
+      // Notify parent component (ChatWithFiles) about file updates for file explorer
+      window.dispatchEvent(new CustomEvent('liveFileUpdate', {
+        detail: {
+          filename: file.filename || file.file,
+          content: file.content,
+          action: file.action,
+          token: file.token
+        }
       }));
     });
 
@@ -109,7 +234,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
 
     // Subscribe to status updates
     const unsubscribeStatus = aiStreamingService.subscribeToStatus((status) => {
-      console.log('📊 AI Streaming status:', status);
+      console.log('📊 AI Streaming status:', JSON.stringify(status, null, 2));
       switch (status.type) {
         case 'connected':
           setStreamingConnected(true);
@@ -263,30 +388,67 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
 
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage("");
-    setIsLoading(true);
     setError(null);
 
-    // Check if this is a generation request that should use streaming
-    const isGenerationRequest = messageText.toLowerCase().includes('create') || 
-                               messageText.toLowerCase().includes('generate') ||
-                               messageText.toLowerCase().includes('build') ||
-                               messageText.toLowerCase().includes('add feature') ||
-                               messageText.toLowerCase().includes('implement');
+    // Comprehensive detection for streaming operations
+    const streamingKeywords = {
+      generation: ['create', 'generate', 'build', 'implement', 'add feature', 'develop', 'make', 'setup', 'initialize'],
+      modification: ['update', 'modify', 'change', 'edit', 'improve', 'enhance', 'refactor', 'optimize'],
+      debugging: ['fix', 'debug', 'resolve', 'error', 'bug', 'issue', 'problem', 'troubleshoot'],
+      testing: ['test', 'verify', 'check', 'validate', 'ensure'],
+      deployment: ['deploy', 'publish', 'release', 'launch', 'migrate', 'run']
+    };
 
-    if (isGenerationRequest && streamingConnected) {
-      // Use AI streaming for real-time file generation
-      console.log('🎯 Using AI streaming for generation request');
-      
-      const success = aiStreamingService.startGeneration(messageText);
-      if (success) {
-        setIsLoading(false);
-        return; // Let the streaming service handle the response
-      } else {
-        console.warn('⚠️ AI streaming not available, falling back to regular chat');
+    const lowerText = messageText.toLowerCase();
+    let operationType = 'chat';
+    let shouldStream = false;
+
+    // Determine operation type and streaming necessity
+    for (const [type, keywords] of Object.entries(streamingKeywords)) {
+      if (keywords.some(keyword => lowerText.includes(keyword))) {
+        operationType = type;
+        shouldStream = true;
+        break;
       }
     }
 
-    // Fallback to regular chat API
+    // Force streaming for complex operations or file-related requests
+    const fileRelatedTerms = ['file', 'model', 'view', 'template', 'form', 'url', 'api', 'database', 'migration'];
+    if (!shouldStream && fileRelatedTerms.some(term => lowerText.includes(term))) {
+      shouldStream = true;
+      operationType = 'modification';
+    }
+
+    console.log(`🎯 Detected operation: ${operationType}, shouldStream: ${shouldStream}`);
+
+    // Use streaming for all operations that might involve file changes
+    if (shouldStream) {
+      console.log('🚀 Starting streaming operation via WebSocket');
+      
+      // First try WebSocket streaming if connected
+      if (streamingConnected && aiStreamingService.isConnected()) {
+        console.log('📡 Using WebSocket streaming for operation:', operationType);
+        const success = aiStreamingService.startGeneration(messageText);
+        if (success) {
+          setIsLoading(false);
+          return; // Let WebSocket handle the streaming
+        } else {
+          console.warn('⚠️ WebSocket streaming failed, trying SSE fallback');
+        }
+      }
+      
+      // Fallback to SSE streaming
+      try {
+        console.log('📡 Using SSE streaming for operation:', operationType);
+        await handleStreamingGeneration(messageText, operationType);
+        return;
+      } catch (error) {
+        console.warn('⚠️ SSE Streaming failed, falling back to regular chat:', error);
+      }
+    }
+
+    // Fallback to regular chat API for simple conversational requests
+    setIsLoading(true);
     try {
       const response = await apiService.conversationChat(
         projectId,
@@ -439,6 +601,282 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
     return "bg-gray-700";
   };
 
+  // Comprehensive streaming function for all AI operations
+  const handleStreamingGeneration = async (prompt: string, operationType = 'project_generation') => {
+    if (isGenerating) return;
+    
+    setIsGenerating(true);
+    setTypingIndicator(true);
+    
+    // Set initial status based on operation type
+    const initialStatus = {
+      'generation': 'initializing',
+      'modification': 'analyzing',
+      'debugging': 'investigating',
+      'testing': 'preparing',
+      'deployment': 'configuring',
+      'chat': 'processing'
+    }[operationType] || 'processing';
+    
+    setGenerationProgress({
+      status: initialStatus,
+      progress: 0,
+      currentFile: '',
+      filesCreated: []
+    });
+
+    try {
+      // Create a streaming ID for this operation
+      const streamId = Date.now().toString();
+      currentStreamId.current = streamId;
+
+      // Add operation-specific initial message
+      const initialMessages = {
+        'generation': '🚀 Initializing project generation...',
+        'modification': '🔧 Analyzing code for modifications...',
+        'debugging': '🐛 Investigating the issue...',
+        'testing': '🧪 Preparing test scenarios...',
+        'deployment': '📦 Configuring deployment settings...',
+        'chat': '💭 Processing your request...'
+      };
+
+      const streamingMessage: ChatMessage = {
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: initialMessages[operationType] || 'Processing your request...',
+        created_at: new Date().toISOString(),
+        streaming: true,
+        operationType
+      };
+      setMessages(prev => [...prev, streamingMessage]);
+
+      // Enhanced streaming endpoint selection based on operation type
+      let streamEndpoint;
+      switch (operationType) {
+        case 'generation':
+          streamEndpoint = `smart_generate_stream`;
+          break;
+        case 'modification':
+        case 'debugging':
+        case 'testing':
+          streamEndpoint = `conversation_stream`;
+          break;
+        default:
+          streamEndpoint = `conversation_stream`;
+      }
+
+      // Get auth token for streaming
+      const token = localStorage.getItem('access_token');
+
+      // Start the streaming with operation-specific endpoint
+      const eventSource = new EventSource(
+        `http://localhost:8000/api/projects/${projectId}/${streamEndpoint}/?prompt=${encodeURIComponent(prompt)}&operation_type=${operationType}&token=${token}`,
+        { withCredentials: true }
+      );
+      
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          // Enhanced real-time message updates with operation context
+          setMessages(prev => prev.map(msg => 
+            msg.streaming && msg.id === streamingMessage.id 
+              ? { 
+                  ...msg, 
+                  content: data.message || msg.content,
+                  files_modified: data.files_modified || msg.files_modified || []
+                }
+              : msg
+          ));
+
+          switch (data.type) {
+            case 'status':
+              setGenerationProgress(prev => ({
+                ...prev,
+                status: data.status || 'processing',
+                progress: data.progress || prev.progress
+              }));
+              setCurrentStreamingMessage(data.message);
+              break;
+              
+            case 'thinking':
+              setCurrentStreamingMessage(`🤔 ${data.message}`);
+              break;
+              
+            case 'analyzing':
+              setCurrentStreamingMessage(`🔍 ${data.message}`);
+              setGenerationProgress(prev => ({ ...prev, progress: 20 }));
+              break;
+              
+            case 'planning':
+              setCurrentStreamingMessage(`📋 ${data.message}`);
+              setGenerationProgress(prev => ({ ...prev, progress: 35 }));
+              break;
+              
+            case 'file_processing':
+              setGenerationProgress(prev => ({
+                ...prev,
+                currentFile: data.current_file,
+                progress: data.progress || prev.progress
+              }));
+              setCurrentStreamingMessage(`📝 Processing: ${data.current_file}`);
+              break;
+              
+            case 'file_created':
+            case 'file_modified':
+              setGenerationProgress(prev => ({
+                ...prev,
+                filesCreated: [...prev.filesCreated, data.file],
+                currentFile: data.file,
+                progress: data.progress || prev.progress
+              }));
+              const action = data.type === 'file_created' ? 'Created' : 'Modified';
+              setCurrentStreamingMessage(`✅ ${action}: ${data.file}`);
+              break;
+              
+            case 'error_found':
+              setCurrentStreamingMessage(`❌ Found error: ${data.message}`);
+              break;
+              
+            case 'error_fixing':
+              setCurrentStreamingMessage(`🔧 Fixing: ${data.message}`);
+              setGenerationProgress(prev => ({ ...prev, progress: 60 }));
+              break;
+              
+            case 'testing':
+              setCurrentStreamingMessage(`🧪 Testing: ${data.message}`);
+              setGenerationProgress(prev => ({ ...prev, progress: 80 }));
+              break;
+              
+            case 'deployment':
+              setCurrentStreamingMessage(`🚀 Deploying: ${data.message}`);
+              setGenerationProgress(prev => ({ ...prev, progress: 90 }));
+              break;
+              
+            case 'template_generated':
+              setCurrentStreamingMessage(`📄 Generated template: ${data.template_name}`);
+              break;
+              
+            case 'migration_created':
+              setCurrentStreamingMessage(`🗃️ Created migration: ${data.migration_name}`);
+              break;
+              
+            case 'dependency_installed':
+              setCurrentStreamingMessage(`📦 Installed: ${data.package}`);
+              break;
+              
+            case 'live_update':
+              // Real-time file content updates
+              if (data.file && data.content) {
+                setLiveFiles(prev => ({
+                  ...prev,
+                  [data.file]: data.content
+                }));
+              }
+              break;
+              
+            case 'completed':
+              // Enhanced completion message with operation summary
+              const completionMessages = {
+                'generation': `🎉 Project generated successfully! Created ${data.files?.length || 0} files.`,
+                'modification': `✅ Code modifications completed! Updated ${data.files?.length || 0} files.`,
+                'debugging': `🐛 Debug fixes applied! Resolved issues in ${data.files?.length || 0} files.`,
+                'testing': `🧪 Testing completed! Verified ${data.files?.length || 0} components.`,
+                'deployment': `🚀 Deployment ready! Configured ${data.files?.length || 0} files.`,
+                'chat': `💬 Task completed successfully!`
+              };
+              
+              const finalMessage = {
+                ...streamingMessage,
+                content: data.message || completionMessages[operationType] || 'Task completed successfully!',
+                streaming: false,
+                files_modified: data.files || [],
+                operationType: `${operationType}_complete`
+              };
+              
+              setMessages(prev => prev.map(msg => 
+                msg.id === streamingMessage.id ? finalMessage : msg
+              ));
+              
+              setGenerationProgress({
+                status: 'completed',
+                progress: 100,
+                currentFile: '',
+                filesCreated: data.files?.map((f: any) => f.path || f) || []
+              });
+              
+              // Refresh file tree and project state
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('refresh-file-tree'));
+                loadConversationHistory();
+              }, 1000);
+              
+              eventSource.close();
+              setIsGenerating(false);
+              setTypingIndicator(false);
+              currentStreamId.current = null;
+              break;
+              
+            case 'error':
+              const errorMessage = {
+                ...streamingMessage,
+                content: `❌ Error: ${data.message || 'Operation failed'}`,
+                streaming: false,
+                messageType: 'error'
+              };
+              
+              setMessages(prev => prev.map(msg => 
+                msg.id === streamingMessage.id ? errorMessage : msg
+              ));
+              
+              eventSource.close();
+              setIsGenerating(false);
+              setTypingIndicator(false);
+              currentStreamId.current = null;
+              break;
+              
+            default:
+              // Handle any custom operation types
+              if (data.message) {
+                setCurrentStreamingMessage(data.message);
+              }
+              if (data.progress) {
+                setGenerationProgress(prev => ({ ...prev, progress: data.progress }));
+              }
+          }
+        } catch (parseError) {
+          console.error('Failed to parse SSE message:', parseError);
+        }
+      };
+      
+      eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        
+        const errorMessage = {
+          ...streamingMessage,
+          content: '🔌 Connection error occurred. Please try again.',
+          streaming: false,
+          messageType: 'error'
+        };
+        
+        setMessages(prev => prev.map(msg => 
+          msg.id === streamingMessage.id ? errorMessage : msg
+        ));
+        
+        eventSource.close();
+        setIsGenerating(false);
+        setTypingIndicator(false);
+        currentStreamId.current = null;
+      };
+      
+    } catch (error) {
+      console.error('Failed to start streaming generation:', error);
+      setIsGenerating(false);
+      setTypingIndicator(false);
+      currentStreamId.current = null;
+    }
+  };
+
   if (isLoadingHistory) {
     return (
       <div className="flex items-center justify-center h-full bg-primary">
@@ -462,6 +900,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
           </div>
         </div>
       )}
+
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 bg-black">
@@ -496,8 +935,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
                   {message.role === "user" ? "You" : "AI Assistant"}
                 </span>
                 <span className="text-xs text-gray-400">
-                  {formatTimestamp(message.timestamp)}
+                  {formatTimestamp(message.created_at)}
                 </span>
+                {message.streaming && (
+                  <Badge variant="neutral" size="sm" className="animate-pulse">
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    Generating...
+                  </Badge>
+                )}
                 {message.processing_time && (
                   <Badge variant="neutral" size="sm">
                     <Clock className="w-3 h-3 mr-1" />
@@ -536,6 +981,59 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
                   })()}
                 </div>
               </div>
+
+              {/* Streaming Progress Section */}
+              {message.streaming && message.role === 'assistant' && generationProgress.status !== 'idle' && (
+                <div className="mt-4 bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-medium text-blue-400 flex items-center">
+                      <Zap className="w-4 h-4 mr-2" />
+                      {generationProgress.status === 'completed' ? 'Generation Complete' : 'Live Generation Progress'}
+                    </h4>
+                    <span className="text-xs text-gray-400">{generationProgress.progress}%</span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-gray-700 rounded-full h-2 mb-3">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${generationProgress.progress}%` }}
+                    />
+                  </div>
+                  
+                  {/* Current File */}
+                  {generationProgress.currentFile && (
+                    <div className="mb-3">
+                      <div className="text-xs text-blue-400 mb-1">Currently processing:</div>
+                      <div className="text-sm font-mono bg-gray-800 px-2 py-1 rounded border-l-2 border-blue-500">
+                        {generationProgress.currentFile}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Files Created */}
+                  {generationProgress.filesCreated.length > 0 && (
+                    <div>
+                      <div className="text-xs text-green-400 mb-2 flex items-center">
+                        <FileText className="w-3 h-3 mr-1" />
+                        Files Created ({generationProgress.filesCreated.length})
+                      </div>
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {generationProgress.filesCreated.slice(-5).map((file, index) => (
+                          <div key={index} className="text-xs font-mono bg-gray-800 px-2 py-1 rounded text-green-300">
+                            ✓ {file}
+                          </div>
+                        ))}
+                        {generationProgress.filesCreated.length > 5 && (
+                          <div className="text-xs text-gray-400 text-center">
+                            ... and {generationProgress.filesCreated.length - 5} more files
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Files Modified Section */}
               {Array.isArray(message.files_modified) &&
@@ -619,22 +1117,61 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ projectId }) => {
           </div>
         ))}
 
-        {/* Live Generation Section */}
+        {/* Enhanced Live Generation Section with Production UX */}
         {isGenerating && (
-          <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 mb-6">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <Zap className="w-6 h-6 text-white animate-pulse" />
+          <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 mb-6 relative overflow-hidden">
+            {/* Animated Background */}
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-cyan-500/5 animate-pulse" />
+            
+            <div className="relative z-10">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="relative w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
+                  <Zap className="w-6 h-6 text-white animate-pulse" />
+                  {/* Ripple effect */}
+                  <div className="absolute inset-0 bg-blue-400 rounded-xl animate-ping opacity-20" />
+                  <div className="absolute inset-0 bg-purple-400 rounded-xl animate-ping opacity-10" style={{ animationDelay: '0.5s' }} />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                    {generationProgress.status === 'completed' ? '✅' : '🚀'} Live AI {generationProgress.status === 'completed' ? 'Completed' : 'Generation'}
+                    <Badge variant={generationProgress.status === 'completed' ? 'success' : 'primary'} size="sm">
+                      <div className={`w-2 h-2 rounded-full mr-2 ${generationProgress.status === 'completed' ? 'bg-green-400' : 'bg-white animate-pulse'}`}></div>
+                      {generationProgress.status === 'completed' ? 'COMPLETE' : 'STREAMING'}
+                    </Badge>
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <p className="text-gray-400 text-sm">{currentStreamingMessage || 'Processing your request...'}</p>
+                    {typingIndicator && (
+                      <div className="flex space-x-1">
+                        <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" />
+                        <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
+                        <div className="w-1 h-1 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-white">{generationProgress.progress}%</div>
+                  <div className="text-xs text-gray-400">Progress</div>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                  🚀 Live AI Generation
-                  <Badge variant="primary" size="sm">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></div>
-                    STREAMING
-                  </Badge>
-                </h3>
-                <p className="text-gray-400 text-sm">Generating files in real-time...</p>
+              
+              {/* Enhanced Progress Bar */}
+              <div className="relative mb-4">
+                <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-3 bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500 rounded-full transition-all duration-500 ease-out relative"
+                    style={{ width: `${generationProgress.progress}%` }}
+                  >
+                    {/* Shimmer effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -skew-x-12 animate-shimmer" />
+                  </div>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 mt-1">
+                  <span>Started</span>
+                  <span className="font-medium">{generationProgress.status}</span>
+                  <span>Complete</span>
+                </div>
               </div>
             </div>
 

@@ -17,6 +17,8 @@ interface FileViewerProps {
   onEditModeChange?: (isEditing: boolean) => void;
   onUnsavedChanges?: (hasChanges: boolean) => void;
   onSaving?: (isSaving: boolean) => void;
+  liveContent?: string;
+  isStreaming?: boolean;
 }
 
 const FileViewer: React.FC<FileViewerProps> = ({ 
@@ -27,9 +29,12 @@ const FileViewer: React.FC<FileViewerProps> = ({
   forceEditMode = false,
   onEditModeChange,
   onUnsavedChanges,
-  onSaving
+  onSaving,
+  liveContent,
+  isStreaming = false
 }) => {
   const [fileContent, setFileContent] = useState<string>('');
+  const [displayContent, setDisplayContent] = useState<string>('');
   const [editedContent, setEditedContent] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +76,41 @@ const FileViewer: React.FC<FileViewerProps> = ({
     }
   }, [isEditing, onEditModeChange]);
 
+  // Handle live content updates
+  useEffect(() => {
+    if (liveContent !== undefined) {
+      setDisplayContent(liveContent);
+      // If we're streaming to this file, show the live content
+      if (isStreaming) {
+        setFileContent(liveContent);
+        setEditedContent(liveContent);
+      }
+    } else {
+      setDisplayContent(fileContent);
+    }
+  }, [liveContent, isStreaming, fileContent]);
+
+  // Listen for live file content updates
+  useEffect(() => {
+    const handleLiveContentUpdate = (event: CustomEvent) => {
+      const { filename, content, token, isStreaming: streaming } = event.detail;
+      
+      if (filename === filePath) {
+        console.log('📝 FileViewer received live content update:', { filename, contentLength: content?.length || 0, streaming });
+        
+        if (streaming) {
+          // Update content in real-time for streaming
+          setDisplayContent(content);
+          setFileContent(content);
+          setEditedContent(content);
+        }
+      }
+    };
+
+    window.addEventListener('liveFileContentUpdate', handleLiveContentUpdate);
+    return () => window.removeEventListener('liveFileContentUpdate', handleLiveContentUpdate);
+  }, [filePath]);
+
 
   useEffect(() => {
     const hasChanges = fileContent !== editedContent && editedContent !== '';
@@ -90,6 +130,7 @@ const FileViewer: React.FC<FileViewerProps> = ({
       const content = response.content || '';
       setFileContent(content);
       setEditedContent(content);
+      setDisplayContent(content);
       setIsEditing(false);
       setHasUnsavedChanges(false);
     } catch (err: any) {
@@ -326,7 +367,7 @@ const FileViewer: React.FC<FileViewerProps> = ({
       {/* Content */}
       <div className="flex-1 min-h-0">
         <CodeEditor
-          value={isEditing ? editedContent : fileContent}
+          value={isEditing ? editedContent : (isStreaming && liveContent !== undefined ? displayContent : fileContent)}
           onChange={isEditing ? setEditedContent : () => {}}
           language={language}
           fileName={fileName}
@@ -360,6 +401,11 @@ const FileViewer: React.FC<FileViewerProps> = ({
               {!canEdit && (
                 <Badge variant="neutral" size="sm" className="hidden sm:flex">
                   Read-only
+                </Badge>
+              )}
+              {isStreaming && (
+                <Badge variant="neutral" size="sm" className="bg-blue-600/20 text-blue-400 border-blue-500/30 animate-pulse">
+                  Streaming...
                 </Badge>
               )}
             </div>

@@ -15,6 +15,10 @@ router.register(r'error-logs', views.ErrorLogViewSet, basename='error-logs')
 router.register(r'analytics', views.UsageAnalyticsViewSet, basename='analytics')
 router.register(r'sessions', views.ProjectSessionViewSet, basename='sessions')
 
+# Usage and billing management routers
+router.register(r'usage-analytics', views.UsageAnalyticsViewSet, basename='usage-analytics')
+router.register(r'billing-management', views.BillingManagementViewSet, basename='billing-management')
+
 # Billing routers
 router.register(r'billing/plans', billing_views.BillingPlanViewSet, basename='billing-plans')
 router.register(r'billing/subscriptions', billing_views.UserSubscriptionViewSet, basename='subscriptions')

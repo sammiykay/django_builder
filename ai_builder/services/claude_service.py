@@ -1,15 +1,17 @@
 from django.conf import settings
-from typing import Dict, List
+from django.contrib.auth.models import User
+from typing import Dict, List, Optional
 import json
 import re
 import logging
 import anthropic
+import time
 
 logger = logging.getLogger(__name__)
 
 
 class ClaudeService:
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, user: Optional[User] = None):
         if api_key:
             self.client = anthropic.Anthropic(api_key=api_key)
         else:
@@ -18,6 +20,7 @@ class ClaudeService:
             self.client = anthropic.Anthropic(api_key=claude_key)
         self.system_prompt = self._get_django_system_prompt()
         self.model_name = "claude-opus-4-20250514"
+        self.user = user
     
     def _get_django_system_prompt(self):
         return """You are a Django expert assistant that creates complete, working Django applications.
@@ -104,9 +107,59 @@ For "Create a REST API for tasks":
 - requirements.txt: Django, djangorestframework
 
 NEVER respond with incomplete code or "TODO" comments. Always provide working, complete implementations."""
+    
+    def _track_token_usage(self, prompt_tokens: int, completion_tokens: int, 
+                          usage_type: str, operation_description: str = "",
+                          project=None, response_time_ms: int = None, 
+                          success: bool = True, error_message: str = "") -> bool:
+        """Track token usage for the current user"""
+        if not self.user:
+            return True  # No user to track
+        
+        # Import here to avoid circular imports
+        from ..billing_services import TokenService
+        
+        total_tokens = prompt_tokens + completion_tokens
+        
+        return TokenService.use_tokens(
+            user=self.user,
+            token_count=total_tokens,
+            usage_type=usage_type,
+            project=project,
+            operation_description=operation_description,
+            request_data={'prompt_tokens': prompt_tokens, 'completion_tokens': completion_tokens},
+            response_data={'total_tokens': total_tokens},
+            response_time_ms=response_time_ms,
+            success=success,
+            error_message=error_message
+        )
+    
+    def _check_token_limits(self, estimated_tokens: int) -> tuple[bool, str]:
+        """Check if user can use estimated tokens"""
+        if not self.user:
+            return True, "No user tracking"
+        
+        # Import here to avoid circular imports
+        from ..billing_services import TokenService
+        
+        return TokenService.can_user_use_tokens(self.user, estimated_tokens)
 
-    def generate_code(self, user_prompt: str, project_context: Dict) -> Dict:
+    def generate_code(self, user_prompt: str, project_context: Dict, project=None) -> Dict:
         """Generate Django code based on user prompt and project context"""
+        start_time = time.time()
+        
+        # Estimate token usage for pre-check (rough estimate)
+        estimated_tokens = len(user_prompt) // 3 + 4000  # Conservative estimate
+        
+        # Check token limits before proceeding
+        can_use, reason = self._check_token_limits(estimated_tokens)
+        if not can_use:
+            logger.warning(f"Token limit exceeded for user {self.user}: {reason}")
+            return {
+                'success': False,
+                'error': f'Token limit exceeded: {reason}',
+                'token_limit_exceeded': True
+            }
         
         # Create a more specific prompt based on the request
         enhanced_prompt = self._create_enhanced_prompt(user_prompt, project_context)
@@ -122,8 +175,26 @@ NEVER respond with incomplete code or "TODO" comments. Always provide working, c
                 ]
             )
             
+            # Calculate response time
+            response_time_ms = int((time.time() - start_time) * 1000)
+            
+            # Track token usage
+            prompt_tokens = response.usage.input_tokens
+            completion_tokens = response.usage.output_tokens
+            
+            self._track_token_usage(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                usage_type='ai_generation',
+                operation_description=f"Code generation: {user_prompt[:100]}...",
+                project=project,
+                response_time_ms=response_time_ms,
+                success=True
+            )
+            
             content = response.content[0].text.strip()
             logger.info(f"Raw Claude response length: {len(content)}")
+            logger.info(f"Tokens used - Input: {prompt_tokens}, Output: {completion_tokens}, Total: {prompt_tokens + completion_tokens}")
             
             # Clean and parse JSON
             parsed_response = self._parse_json_response(content)
@@ -131,9 +202,30 @@ NEVER respond with incomplete code or "TODO" comments. Always provide working, c
             # Validate and enhance the response
             validated_response = self._validate_and_enhance_response(parsed_response, user_prompt)
             
+            # Add token usage info to response
+            validated_response['token_usage'] = {
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': completion_tokens,
+                'total_tokens': prompt_tokens + completion_tokens,
+                'response_time_ms': response_time_ms
+            }
+            
             return validated_response
                 
         except Exception as e:
+            # Track failed operation
+            response_time_ms = int((time.time() - start_time) * 1000)
+            self._track_token_usage(
+                prompt_tokens=0,
+                completion_tokens=0,
+                usage_type='ai_generation',
+                operation_description=f"FAILED: Code generation: {user_prompt[:100]}...",
+                project=project,
+                response_time_ms=response_time_ms,
+                success=False,
+                error_message=str(e)
+            )
+            
             logger.error(f"Error generating code: {e}")
             return self._create_error_response(str(e))
     
@@ -586,3 +678,94 @@ Respond with JSON:
                 "corrected_code": file_content,
                 "additional_steps": []
             }
+    
+    def stream_generate_code(self, user_prompt: str, project_context: str = "", callback=None):
+        """Generate code with token-by-token streaming like bolt.new"""
+        
+        full_prompt = f"""
+{self.system_prompt}
+
+PROJECT CONTEXT:
+{project_context}
+
+USER REQUEST: {user_prompt}
+
+Generate the complete Django solution as JSON with this structure:
+{{
+    "files": [
+        {{
+            "filename": "path/to/file.py",
+            "content": "complete file content",
+            "description": "What this file does"
+        }}
+    ],
+    "explanation": "How the solution works",
+    "requirements": ["Django>=4.0", "other-package"]
+}}
+"""
+        
+        try:
+            # Claude streaming API call
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=4000,
+                temperature=0.3,
+                system=self.system_prompt,
+                messages=[{"role": "user", "content": full_prompt}],
+                stream=True  # Enable token-level streaming
+            )
+            
+            full_content = ""
+            current_file = None
+            current_filename = None
+            current_content = ""
+            
+            for chunk in response:
+                if chunk.type == "content_block_delta":
+                    token = chunk.delta.text
+                    full_content += token
+                    
+                    # Parse streaming JSON to detect file creation
+                    if callback:
+                        # Check if we're starting a new file
+                        if '"filename":' in token and '"content":' not in current_content:
+                            # Extract filename from the streaming token
+                            import re
+                            filename_match = re.search(r'"filename":\s*"([^"]+)"', full_content)
+                            if filename_match:
+                                new_filename = filename_match.group(1)
+                                if new_filename != current_filename:
+                                    current_filename = new_filename
+                                    current_content = ""
+                                    
+                                    # Notify new file creation
+                                    callback({
+                                        'type': 'file_started',
+                                        'filename': current_filename,
+                                        'content': ''
+                                    })
+                        
+                        # Check if we're writing file content
+                        elif '"content":' in full_content and current_filename:
+                            # Extract content being written
+                            content_match = re.search(r'"content":\s*"([^"]*)', full_content)
+                            if content_match:
+                                new_content = content_match.group(1)
+                                if len(new_content) > len(current_content):
+                                    # New tokens added to file content
+                                    current_content = new_content
+                                    
+                                    # Stream token-by-token update
+                                    callback({
+                                        'type': 'file_content_token',
+                                        'filename': current_filename,
+                                        'content': current_content.replace('\\n', '\n').replace('\\"', '"'),
+                                        'token': token
+                                    })
+            
+            # Parse final response
+            return self._parse_json_response(full_content)
+            
+        except Exception as e:
+            logger.error(f"Streaming generation error: {e}")
+            return self._create_error_response(f"Generation failed: {str(e)}")

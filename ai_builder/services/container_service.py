@@ -438,20 +438,38 @@ CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
         project_path = self.projects_dir / project_id
         files = []
         
+        logger.info(f"Listing files for project {project_id}, path: {project_path}")
+        logger.info(f"Projects dir: {self.projects_dir}")
+        logger.info(f"Project path exists: {project_path.exists()}")
+        
         if not project_path.exists():
+            logger.warning(f"Project path does not exist: {project_path}")
             return files
         
         try:
+            # Get absolute path to ensure we're within project boundaries
+            abs_project_path = project_path.resolve()
+            logger.info(f"Absolute project path: {abs_project_path}")
+            
             for file_path in project_path.rglob('*'):
                 if file_path.is_file() and not self._should_ignore_file(file_path):
-                    relative_path = file_path.relative_to(project_path)
-                    files.append({
-                        'path': str(relative_path),
-                        'size': file_path.stat().st_size,
-                        'modified': file_path.stat().st_mtime
-                    })
+                    # Ensure file is actually within project directory
+                    abs_file_path = file_path.resolve()
+                    try:
+                        relative_path = abs_file_path.relative_to(abs_project_path)
+                        files.append({
+                            'path': str(relative_path),
+                            'size': file_path.stat().st_size,
+                            'modified': file_path.stat().st_mtime
+                        })
+                    except ValueError:
+                        # File is outside project directory, skip it
+                        logger.warning(f"Skipping file outside project directory: {abs_file_path}")
+                        continue
+                        
+            logger.info(f"Found {len(files)} files in project {project_id}")
         except Exception as e:
-            logger.error(f"Error listing files: {e}")
+            logger.error(f"Error listing files for project {project_id}: {e}")
         
         return files
     

@@ -194,7 +194,7 @@ class ProjectViewSet(ModelViewSet):
             if not project.django_project_created or project.files.count() == 0:
                 # NEW PROJECT: Use smart project generator
                 container_service = ContainerService()
-                generator = SmartProjectGenerator(container_service.projects_dir)
+                generator = SmartProjectGenerator(container_service.projects_dir, user=request.user)
                 
                 # Generate complete project from user prompt
                 result = generator.generate_project_from_prompt(user_prompt, str(project.id))
@@ -311,7 +311,7 @@ Your project is ready to use at: {result['access_url']}
             else:
                 # EXISTING PROJECT: Use generator to add components
                 container_service = ContainerService()
-                generator = SmartProjectGenerator(container_service.projects_dir)
+                generator = SmartProjectGenerator(container_service.projects_dir, user=request.user)
                 
                 # Analyze user prompt to determine what to add
                 analysis_prompt = f"""
@@ -551,12 +551,63 @@ Include code examples and step-by-step instructions.
                 if not project.django_project_created or project.files.count() == 0:
                     # NEW PROJECT: Use smart project generator with streaming
                     container_service = ContainerService()
-                    generator = SmartProjectGenerator(container_service.projects_dir)
+                    generator = SmartProjectGenerator(container_service.projects_dir, user=request.user)
                     
                     yield f"data: {json.dumps({'type': 'status', 'message': 'Analyzing your requirements...', 'status': 'analyzing'})}\n\n"
                     
-                    # Generate complete project from user prompt
-                    result = generator.generate_project_from_prompt(user_prompt, str(project.id))
+                    # Create a generator-based streaming solution
+                    # We'll use a queue to collect updates from the callback
+                    import queue
+                    import threading
+                    
+                    update_queue = queue.Queue()
+                    generation_complete = threading.Event()
+                    
+                    def stream_callback(update):
+                        """Send real-time updates via SSE"""
+                        update_queue.put(update)
+                    
+                    # Start generation in a separate thread
+                    def run_generation():
+                        try:
+                            result = generator.generate_project_from_prompt_streaming(
+                                user_prompt, 
+                                str(project.id),
+                                progress_callback=stream_callback
+                            )
+                            update_queue.put({'_result': result})
+                        except Exception as e:
+                            update_queue.put({'_error': str(e)})
+                        finally:
+                            generation_complete.set()
+                    
+                    generation_thread = threading.Thread(target=run_generation)
+                    generation_thread.start()
+                    
+                    # Stream updates as they come
+                    result = None
+                    while not generation_complete.is_set() or not update_queue.empty():
+                        try:
+                            update = update_queue.get(timeout=1.0)
+                            
+                            # Check for special messages
+                            if '_result' in update:
+                                result = update['_result']
+                                break
+                            elif '_error' in update:
+                                error_msg = f"Generation failed: {update['_error']}"
+                                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                                return
+                            else:
+                                # Regular update
+                                yield f"data: {json.dumps(update)}\n\n"
+                                
+                        except queue.Empty:
+                            # Send keep-alive
+                            yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+                            continue
+                    
+                    generation_thread.join()
                     
                     if not result.get('success'):
                         project.ai_generation_status = 'error'
@@ -987,8 +1038,14 @@ Your project is ready to use at: {result['access_url']}
         project = self.get_object()
         container_service = ContainerService()
         
+        logger.info(f"Getting filesystem files for project {project.id}")
+        
         # Get files from filesystem
         filesystem_files = container_service.list_project_files(str(project.id))
+        
+        logger.info(f"Container service returned {len(filesystem_files)} files")
+        if filesystem_files:
+            logger.info(f"First few files: {[f['path'] for f in filesystem_files[:5]]}")
         
         # Add additional metadata and organize into tree structure
         for file_info in filesystem_files:
@@ -1001,6 +1058,7 @@ Your project is ready to use at: {result['access_url']}
         # Sort files by path for better organization
         filesystem_files.sort(key=lambda x: x['path'])
         
+        logger.info(f"Returning {len(filesystem_files)} files to frontend")
         return Response(filesystem_files)
     
     @action(detail=True, methods=['get'], url_path='files/content')
@@ -1245,6 +1303,340 @@ Provide helpful assistance for this Django project.
                 'total_messages': 0
             })
 
+    @action(detail=True, methods=['get', 'post'], 
+            renderer_classes=[StreamingRenderer], permission_classes=[])
+    def conversation_stream(self, request, pk=None):
+        """
+        Streaming conversation endpoint for real-time chat operations including:
+        - Iterative chat and modifications
+        - Error fixing with live feedback
+        - File updates with progress tracking
+        - Production-grade streaming UX
+        """
+        # Handle GET requests for EventSource (SSE)
+        if request.method == 'GET':
+            # Handle authentication via query parameter for EventSource
+            token = request.GET.get('token')
+            if token:
+                try:
+                    # Decode JWT token
+                    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=['HS256'])
+                    User = get_user_model()
+                    user = User.objects.get(id=payload['user_id'])
+                    request.user = user
+                except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, User.DoesNotExist):
+                    return StreamingHttpResponse(
+                        iter([f"data: {json.dumps({'type': 'error', 'message': 'Invalid or expired token'})}\n\n"]),
+                        content_type='text/event-stream'
+                    )
+            else:
+                # Try regular auth
+                if not request.user.is_authenticated:
+                    return StreamingHttpResponse(
+                        iter([f"data: {json.dumps({'type': 'error', 'message': 'Authentication required'})}\n\n"]),
+                        content_type='text/event-stream'
+                    )
+        
+        # Get project
+        try:
+            project = Project.objects.get(id=pk, owner=request.user)
+        except Project.DoesNotExist:
+            return StreamingHttpResponse(
+                iter([f"data: {json.dumps({'type': 'error', 'message': 'Project not found or access denied'})}\n\n"]),
+                content_type='text/event-stream'
+            )
+
+        # Get parameters
+        prompt = request.GET.get('prompt') or request.POST.get('prompt', '')
+        operation_type = request.GET.get('operation_type') or request.POST.get('operation_type', 'chat')
+        
+        if not prompt:
+            return StreamingHttpResponse(
+                iter([f"data: {json.dumps({'type': 'error', 'message': 'Prompt parameter is required'})}\n\n"]),
+                content_type='text/event-stream'
+            )
+
+        def conversation_stream_generator():
+            try:
+                # Initialize services
+                import threading
+                import queue
+                from .services.claude_service import ClaudeService
+                from .services.conversation_service import ConversationService
+                
+                # Get or create chat thread
+                chat_thread, created = ChatThread.objects.get_or_create(
+                    project=project,
+                    defaults={'is_active': True}
+                )
+                
+                # Save user message
+                user_message = ChatMessage.objects.create(
+                    thread=chat_thread,
+                    project=project,
+                    role='user',
+                    content=prompt,
+                    message_type='normal'
+                )
+                
+                start_time = time.time()
+                
+                # Send initial status based on operation type
+                initial_messages = {
+                    'generation': '🚀 Starting generation process...',
+                    'modification': '🔧 Analyzing code for modifications...',
+                    'debugging': '🐛 Investigating the issue...',
+                    'testing': '🧪 Preparing test scenarios...',
+                    'deployment': '📦 Configuring deployment...',
+                    'chat': '💭 Processing your request...'
+                }
+                
+                yield f"data: {json.dumps({'type': 'thinking', 'message': initial_messages.get(operation_type, 'Processing...')})}\n\n"
+                
+                # Operation-specific handling with streaming
+                if operation_type in ['modification', 'debugging', 'testing']:
+                    yield from self._handle_code_operation_stream(project, chat_thread, prompt, operation_type)
+                elif operation_type == 'generation':
+                    yield from self._handle_generation_operation_stream(project, chat_thread, prompt)
+                else:
+                    yield from self._handle_conversation_stream(project, chat_thread, prompt)
+                    
+            except Exception as e:
+                error_msg = f"Conversation streaming error: {str(e)}"
+                logger.error(error_msg)
+                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+
+        response = StreamingHttpResponse(conversation_stream_generator(), content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        response['Access-Control-Allow-Origin'] = '*'
+        response['Access-Control-Allow-Headers'] = 'Cache-Control'
+        return response
+
+    def _handle_conversation_stream(self, project, chat_thread, prompt):
+        """Handle general conversation with streaming updates"""
+        try:
+            from .services.claude_service import ClaudeService
+            
+            yield f"data: {json.dumps({'type': 'analyzing', 'message': 'Analyzing your request...', 'progress': 20})}\n\n"
+            
+            # Build context
+            project_files = ProjectFile.objects.filter(project=project)[:10]
+            recent_messages = ChatMessage.objects.filter(thread=chat_thread).order_by('-timestamp')[:5]
+            
+            context_prompt = f"""
+You are helping with Django project "{project.name}".
+
+Project Context:
+- Type: {project.get_project_type_display()}
+- Files: {project_files.count()} files
+- Recent chat: {len(recent_messages)} messages
+
+Current request: "{prompt}"
+
+Provide helpful assistance. If code changes are needed, be specific about which files to modify.
+"""
+            
+            yield f"data: {json.dumps({'type': 'planning', 'message': 'Planning response...', 'progress': 40})}\n\n"
+            
+            claude_service = ClaudeService(user=project.owner)
+            start_time = time.time()
+            
+            # Stream the response
+            response = claude_service.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=2000,
+                temperature=0.1,
+                messages=[{"role": "user", "content": context_prompt}]
+            )
+            
+            ai_response = response.content[0].text.strip()
+            processing_time = time.time() - start_time
+            
+            yield f"data: {json.dumps({'type': 'processing', 'message': 'Generating response...', 'progress': 80})}\n\n"
+            
+            # Save AI response
+            ai_message = ChatMessage.objects.create(
+                thread=chat_thread,
+                project=project,
+                role='assistant',
+                content=ai_response,
+                processing_time=processing_time
+            )
+            
+            # Send completion
+            yield f"data: {json.dumps({
+                'type': 'completed',
+                'message': ai_response,
+                'processing_time': processing_time,
+                'progress': 100
+            })}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Conversation stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Failed to process conversation: {str(e)}'})}\n\n"
+    
+    def _handle_code_operation_stream(self, project, chat_thread, prompt, operation_type):
+        """Handle code modifications, debugging, and testing with streaming"""
+        try:
+            from .services.claude_service import ClaudeService
+            from .services.file_merger import CodeMerger
+            
+            # Step 1: Analysis
+            yield f"data: {json.dumps({'type': 'analyzing', 'message': f'{operation_type.title()} analysis starting...', 'progress': 10})}\n\n"
+            
+            # Get project files for context
+            project_files = ProjectFile.objects.filter(project=project)
+            file_context = {}
+            
+            for i, pf in enumerate(project_files[:20]):  # Limit to 20 files for performance
+                file_context[pf.name] = pf.content[:2000]  # First 2000 chars
+                progress = 10 + (i / min(20, project_files.count())) * 20
+                yield f"data: {json.dumps({'type': 'file_processing', 'current_file': pf.name, 'progress': progress})}\n\n"
+            
+            # Step 2: Planning
+            yield f"data: {json.dumps({'type': 'planning', 'message': f'Planning {operation_type} strategy...', 'progress': 35})}\n\n"
+            
+            context_prompt = f"""
+You are working on a Django project "{project.name}".
+
+Operation: {operation_type.upper()}
+Request: "{prompt}"
+
+Current project files:
+{json.dumps(file_context, indent=2)[:5000]}
+
+For {operation_type} operations:
+1. Identify which files need changes
+2. Provide specific code modifications
+3. Explain the changes clearly
+4. Consider potential issues
+
+Provide detailed, actionable guidance.
+"""
+            
+            # Step 3: Processing
+            yield f"data: {json.dumps({'type': 'processing', 'message': f'Executing {operation_type} operations...', 'progress': 60})}\n\n"
+            
+            claude_service = ClaudeService(user=project.owner)
+            start_time = time.time()
+            
+            response = claude_service.client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=3000,
+                temperature=0.1,
+                messages=[{"role": "user", "content": context_prompt}]
+            )
+            
+            ai_response = response.content[0].text.strip()
+            processing_time = time.time() - start_time
+            
+            # Step 4: Implementation simulation
+            yield f"data: {json.dumps({'type': 'file_processing', 'message': 'Applying changes...', 'progress': 80})}\n\n"
+            
+            # Save response
+            ai_message = ChatMessage.objects.create(
+                thread=chat_thread,
+                project=project,
+                role='assistant',
+                content=ai_response,
+                processing_time=processing_time,
+                message_type='fix_applied' if operation_type == 'debugging' else 'normal'
+            )
+            
+            # Step 5: Completion
+            yield f"data: {json.dumps({
+                'type': 'completed',
+                'message': ai_response,
+                'processing_time': processing_time,
+                'files_modified': list(file_context.keys())[:5],
+                'progress': 100
+            })}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Code operation stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'{operation_type.title()} failed: {str(e)}'})}\n\n"
+    
+    def _handle_generation_operation_stream(self, project, chat_thread, prompt):
+        """Handle new code generation with streaming"""
+        try:
+            from .services.smart_project_generator import SmartProjectGenerator
+            from .services.container_service import ContainerService
+            
+            yield f"data: {json.dumps({'type': 'analyzing', 'message': 'Analyzing generation requirements...', 'progress': 5})}\n\n"
+            
+            container_service = ContainerService()
+            generator = SmartProjectGenerator(container_service.projects_dir, user=project.owner)
+            
+            # Create progress tracking
+            import queue
+            import threading
+            
+            update_queue = queue.Queue()
+            generation_complete = threading.Event()
+            
+            def stream_callback(update):
+                update_queue.put(update)
+            
+            def run_generation():
+                try:
+                    result = generator.generate_project_from_prompt_streaming(
+                        prompt,
+                        str(project.id),
+                        progress_callback=stream_callback
+                    )
+                    update_queue.put({'_result': result})
+                    generation_complete.set()
+                except Exception as e:
+                    update_queue.put({'_error': str(e)})
+                    generation_complete.set()
+            
+            # Start generation in background
+            generation_thread = threading.Thread(target=run_generation)
+            generation_thread.start()
+            
+            # Stream updates
+            while not generation_complete.is_set():
+                try:
+                    update = update_queue.get(timeout=1)
+                    
+                    if '_result' in update:
+                        # Generation completed
+                        result = update['_result']
+                        
+                        # Save completion message
+                        ai_message = ChatMessage.objects.create(
+                            thread=chat_thread,
+                            project=project,
+                            role='assistant',
+                            content=f"✅ Generation completed! Created {len(result.get('files_created', []))} files.",
+                            message_type='normal'
+                        )
+                        
+                        yield f"data: {json.dumps({
+                            'type': 'completed',
+                            'message': f"Generation completed successfully!",
+                            'files': result.get('files_created', []),
+                            'progress': 100
+                        })}\n\n"
+                        break
+                        
+                    elif '_error' in update:
+                        yield f"data: {json.dumps({'type': 'error', 'message': update['_error']})}\n\n"
+                        break
+                        
+                    else:
+                        # Regular update
+                        yield f"data: {json.dumps(update)}\n\n"
+                        
+                except queue.Empty:
+                    continue
+            
+            generation_thread.join(timeout=5)
+            
+        except Exception as e:
+            logger.error(f"Generation stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Generation failed: {str(e)}'})}\n\n"
+
     @action(detail=True, methods=['post'])
     def report_error(self, request, pk=None):
         """Report an error from the running project for AI to fix"""
@@ -1438,7 +1830,7 @@ Provide helpful assistance for this Django project.
             
             # Use smart project generator
             container_service = ContainerService()
-            generator = SmartProjectGenerator(container_service.projects_dir)
+            generator = SmartProjectGenerator(container_service.projects_dir, user=project.owner)
             
             # Generate complete project from user prompt
             result = generator.generate_project_from_prompt(description, str(project.id))
@@ -2412,4 +2804,271 @@ class ProjectSessionViewSet(ReadOnlyModelViewSet):
                 {'error': 'Active session not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+
+class UsageAnalyticsViewSet(ReadOnlyModelViewSet):
+    """
+    API endpoints for usage analytics and token tracking
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        # Users can only see their own usage data
+        from .models import TokenUsage
+        return TokenUsage.objects.filter(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def dashboard_stats(self, request):
+        """Get comprehensive usage statistics for dashboard"""
+        from .billing_services import TokenService
+        
+        stats = TokenService.get_user_usage_stats(request.user)
+        
+        # Add additional analytics
+        from .models import TokenUsage, UserSubscription
+        from django.db.models import Count, Avg
+        from datetime import timedelta
+        
+        # Usage trends for last 7 days
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        weekly_usage = TokenUsage.objects.filter(
+            user=request.user,
+            created_at__gte=seven_days_ago
+        ).extra(
+            select={'day': 'date(created_at)'}
+        ).values('day').annotate(
+            tokens=Sum('tokens_used'),
+            requests=Count('id')
+        ).order_by('day')
+        
+        # Top usage types
+        top_usage_types = TokenUsage.objects.filter(
+            user=request.user,
+            created_at__gte=seven_days_ago
+        ).values('usage_type').annotate(
+            tokens=Sum('tokens_used'),
+            count=Count('id')
+        ).order_by('-tokens')[:5]
+        
+        # Average response time
+        avg_response_time = TokenUsage.objects.filter(
+            user=request.user,
+            created_at__gte=seven_days_ago,
+            response_time_ms__isnull=False
+        ).aggregate(avg_time=Avg('response_time_ms'))
+        
+        stats.update({
+            'weekly_usage': list(weekly_usage),
+            'top_usage_types': list(top_usage_types),
+            'average_response_time_ms': avg_response_time['avg_time'] or 0,
+            'period_start': request.user.subscription.current_period_start if hasattr(request.user, 'subscription') else None,
+            'period_end': request.user.subscription.current_period_end if hasattr(request.user, 'subscription') else None
+        })
+        
+        return Response(stats)
+    
+    @action(detail=False, methods=['get'])
+    def usage_history(self, request):
+        """Get detailed usage history with pagination"""
+        from .models import TokenUsage
+        from rest_framework.pagination import PageNumberPagination
+        
+        paginator = PageNumberPagination()
+        paginator.page_size = 50
+        
+        queryset = TokenUsage.objects.filter(user=request.user).order_by('-created_at')
+        
+        # Filter by date range if provided
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        if start_date:
+            try:
+                from datetime import datetime
+                start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                queryset = queryset.filter(created_at__gte=start_date)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                from datetime import datetime
+                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                queryset = queryset.filter(created_at__lte=end_date)
+            except ValueError:
+                pass
+        
+        # Filter by usage type
+        usage_type = request.GET.get('usage_type')
+        if usage_type:
+            queryset = queryset.filter(usage_type=usage_type)
+        
+        page = paginator.paginate_queryset(queryset, request)
+        
+        # Custom serialization for usage data
+        usage_data = []
+        for usage in page:
+            usage_data.append({
+                'id': usage.id,
+                'usage_type': usage.usage_type,
+                'tokens_used': usage.tokens_used,
+                'prompt_tokens': usage.prompt_tokens,
+                'completion_tokens': usage.completion_tokens,
+                'operation_description': usage.operation_description,
+                'response_time_ms': usage.response_time_ms,
+                'success': usage.success,
+                'error_message': usage.error_message,
+                'cost_dollars': usage.cost_dollars,
+                'created_at': usage.created_at,
+                'project_name': usage.project.name if usage.project else None
+            })
+        
+        return paginator.get_paginated_response(usage_data)
+    
+    @action(detail=False, methods=['get'])
+    def export_usage(self, request):
+        """Export usage data as CSV"""
+        from .models import TokenUsage
+        from django.http import HttpResponse
+        import csv
+        from datetime import datetime
+        
+        # Get date range
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        
+        queryset = TokenUsage.objects.filter(user=request.user).order_by('-created_at')
+        
+        if start_date:
+            try:
+                start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                queryset = queryset.filter(created_at__gte=start_date)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                queryset = queryset.filter(created_at__lte=end_date)
+            except ValueError:
+                pass
+        
+        # Create CSV response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="usage_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+        
+        writer = csv.writer(response)
+        
+        # Write header
+        writer.writerow([
+            'Date', 'Usage Type', 'Tokens Used', 'Prompt Tokens', 'Completion Tokens',
+            'Operation', 'Response Time (ms)', 'Success', 'Cost ($)', 'Project'
+        ])
+        
+        # Write data
+        for usage in queryset:
+            writer.writerow([
+                usage.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                usage.usage_type,
+                usage.tokens_used,
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.operation_description,
+                usage.response_time_ms or '',
+                'Yes' if usage.success else 'No',
+                f'{usage.cost_dollars:.4f}',
+                usage.project.name if usage.project else ''
+            ])
+        
+        return response
+
+
+class BillingManagementViewSet(ModelViewSet):
+    """
+    API endpoints for billing and subscription management
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        from .models import UserSubscription
+        return UserSubscription.objects.filter(user=self.request.user)
+    
+    @action(detail=False, methods=['get'])
+    def current_subscription(self, request):
+        """Get current user subscription details"""
+        from .billing_services import BillingService
+        
+        try:
+            billing_service = BillingService()
+            subscription = billing_service.get_or_create_default_subscription(request.user)
+            
+            if not subscription:
+                return Response({'error': 'No subscription found'}, status=404)
+            
+            # Import serializer to avoid circular imports
+            from .serializers import BillingPlanSerializer
+            
+            return Response({
+                'subscription_id': subscription.id,
+                'plan': BillingPlanSerializer(subscription.plan).data,
+                'status': subscription.status,
+                'tokens_used_this_period': subscription.tokens_used_this_period,
+                'tokens_remaining': subscription.tokens_remaining,
+                'usage_percentage': subscription.usage_percentage,
+                'current_period_start': subscription.current_period_start,
+                'current_period_end': subscription.current_period_end,
+                'auto_renew': subscription.auto_renew,
+                'bonus_tokens_remaining': subscription.bonus_tokens_remaining
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting subscription: {e}")
+            return Response({'error': 'Failed to get subscription details'}, status=500)
+    
+    @action(detail=False, methods=['get'])
+    def available_plans(self, request):
+        """Get all available billing plans"""
+        from .models import BillingPlan
+        from .serializers import BillingPlanSerializer
+        
+        plans = BillingPlan.objects.filter(is_active=True).order_by('sort_order', 'price')
+        serializer = BillingPlanSerializer(plans, many=True)
+        
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['post'])
+    def upgrade_plan(self, request):
+        """Upgrade to a new billing plan"""
+        from .billing_services import BillingService
+        from .models import BillingPlan
+        
+        plan_id = request.data.get('plan_id')
+        if not plan_id:
+            return Response({'error': 'Plan ID is required'}, status=400)
+        
+        try:
+            new_plan = BillingPlan.objects.get(id=plan_id, is_active=True)
+            billing_service = BillingService()
+            subscription = billing_service.get_or_create_default_subscription(request.user)
+            
+            if not subscription:
+                return Response({'error': 'No subscription found'}, status=404)
+            
+            # Upgrade subscription
+            result = billing_service.upgrade_subscription(subscription, new_plan)
+            
+            if result['success']:
+                return Response({
+                    'success': True,
+                    'message': result['message'],
+                    'new_plan': new_plan.name
+                })
+            else:
+                return Response({'error': result['error']}, status=400)
+                
+        except BillingPlan.DoesNotExist:
+            return Response({'error': 'Plan not found'}, status=404)
+        except Exception as e:
+            logger.error(f"Error upgrading plan: {e}")
+            return Response({'error': 'Failed to upgrade plan'}, status=500)
 

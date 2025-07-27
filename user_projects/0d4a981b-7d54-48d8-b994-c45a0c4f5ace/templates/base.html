@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Recipe Share - Discover, create and share your favorite recipes">
+    <meta name="theme-color" content="#FF6B6B">
+    <title>{% block title %}Recipe Share{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'images/favicon.png' %}">
+    
+    <!-- PWA -->
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <link rel="apple-touch-icon" href="{% static 'images/icon-192x192.png' %}">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="h-full bg-gray-50 dark:bg-gray-900" x-data="{ darkMode: false, mobileMenu: false }">
+    <!-- Navigation -->
+    <nav class="bg-white dark:bg-gray-800 shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <a href="{% url 'home' %}" class="flex-shrink-0 flex items-center">
+                        <img class="h-8 w-auto" src="{% static 'images/logo.png' %}" alt="Recipe Share">
+                    </div>
+                    
+                    <!-- Desktop Navigation -->
+                    <div class="hidden md:flex items-center space-x-4">
+                        <a href="{% url 'recipes:browse' %}" class="text-gray-700 dark:text-gray-200 hover:text-primary-500">Browse Recipes</a>
+                        <a href="{% url 'recipes:create' %}" class="text-gray-700 dark:text-gray-200 hover:text-primary-500">Create Recipe</a>
+                        <a href="{% url 'collections:list' %}" class="text-gray-700 dark:text-gray-200 hover:text-primary-500">Collections</a>
+                    </div>
+                </div>
+                
+                <!-- Search Bar -->
+                <div class="flex-1 flex items-center justify-center px-2 lg:ml-6 lg:justify-end">
+                    <div class="max-w-lg w-full lg:max-w-xs">
+                        <form action="{% url 'recipes:search' %}" method="get">
+                            <input type="search" name="q" class="w-full bg-gray-100 dark:bg-gray-700 rounded-lg px-4 py-2" placeholder="Search recipes...">
+                        </form>
+                    </div>
+                </div>
+                
+                <!-- User Menu -->
+                <div class="flex items-center">
+                    {% if user.is_authenticated %}
+                        <div class="ml-3 relative" x-data="{ open: false }">
+                            <button @click="open = !open" class="flex text-sm rounded-full focus:outline-none">
+                                <img class="h-8 w-8 rounded-full" src="{{ user.profile.avatar.url }}" alt="">
+                            </button>
+                            <div x-show="open" @click.away="open = false" class="absolute right-0 mt-2 w-48 rounded-md shadow-lg">
+                                <a href="{% url 'profiles:detail' user.username %}" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Profile</a>
+                                <a href="{% url 'accounts:settings' %}" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Settings</a>
+                                <a href="{% url 'accounts:logout' %}" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Logout</a>
+                            </div>
+                        </div>
+                    {% else %}
+                        <a href="{% url 'accounts:login' %}" class="text-gray-700 dark:text-gray-200 hover:text-primary-500">Login</a>
+                        <a href="{% url 'accounts:register' %}" class="ml-4 px-4 py-2 rounded-md bg-primary-500 text-white hover:bg-primary-600">Sign Up</a>
+                    {% endif %}
+                    
+                    <!-- Theme Toggle -->
+                    <button @click="darkMode = !darkMode" class="ml-4 text-gray-500 dark:text-gray-400">
+                        <span x-show="!darkMode">🌙</span>
+                        <span x-show="darkMode">☀️</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Toast Messages -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 mb-4" role="alert">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white dark:bg-gray-800 shadow-lg mt-auto">
+        <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Recipe Share</h3>
+                    <p class="mt-2 text-gray-600 dark:text-gray-300">Share your culinary creations with the world.</p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Quick Links</h3>
+                    <ul class="mt-2 space-y-2">
+                        <li><a href="{% url 'about' %}" class="text-gray-600 dark:text-gray-300 hover:text-primary-500">About</a></li>
+                        <li><a href="{% url 'contact' %}" class="text-gray-600 dark:text-gray-300 hover:text-primary-500">Contact</a></li>
+                        <li><a href="{% url 'privacy' %}" class="text-gray-600 dark:text-gray-300 hover:text-primary-500">Privacy Policy</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Follow Us</h3>
+                    <div class="mt-2 flex space-x-4">
+                        <a href="#" class="text-gray-600 dark:text-gray-300 hover:text-primary-500"><span class="sr-only">Facebook</span>📘</a>
+                        <a href="#" class="text-gray-600 dark:text-gray-300 hover:text-primary-500"><span class="sr-only">Twitter</span>🐦</a>
+                        <a href="#" class="text-gray-600 dark:text-gray-300 hover:text-primary-500"><span class="sr-only">Instagram</span>📷</a>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-8 border-t border-gray-200 dark:border-gray-700 pt-8 text-center text-gray-600 dark:text-gray-300">
+                <p>&copy; {% now "Y" %} Recipe Share. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

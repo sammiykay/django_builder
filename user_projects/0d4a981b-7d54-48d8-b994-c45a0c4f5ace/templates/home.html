@@ -1,0 +1,123 @@
+<!-- Hero Section -->
+<section class="hero bg-gradient-primary min-h-[600px] flex items-center">
+    <div class="container mx-auto px-4">
+        <div class="grid md:grid-cols-2 gap-8 items-center">
+            <div class="text-white">
+                <h1 class="text-5xl font-bold mb-6">Share Your Culinary Journey</h1>
+                <p class="text-xl mb-8">Join thousands of food lovers sharing their favorite recipes, discovering new dishes, and connecting through the love of cooking.</p>
+                <div class="flex gap-4">
+                    <a href="{% url 'signup' %}" class="btn-primary">Get Started</a>
+                    <a href="{% url 'recipes' %}" class="btn-secondary">Explore Recipes</a>
+                </div>
+            </div>
+            <div class="hidden md:block">
+                <img src="{% static 'images/hero-image.jpg' %}" alt="Cooking" class="rounded-lg shadow-xl">
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section class="py-16 bg-gray-50">
+    <div class="container mx-auto px-4">
+        <h2 class="text-3xl font-bold text-center mb-12">Why Choose RecipeShare</h2>
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="feature-card">
+                <i class="fas fa-utensils text-4xl text-primary mb-4"></i>
+                <h3 class="text-xl font-semibold mb-3">Step-by-Step Guides</h3>
+                <p>Detailed cooking instructions with timing and tips for perfect results every time.</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-star text-4xl text-primary mb-4"></i>
+                <h3 class="text-xl font-semibold mb-3">Ratings & Reviews</h3>
+                <p>Share your experience and learn from other cooks in our community.</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-mobile-alt text-4xl text-primary mb-4"></i>
+                <h3 class="text-xl font-semibold mb-3">Shopping Lists</h3>
+                <p>Generate smart shopping lists from your favorite recipes instantly.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Recent Recipes -->
+<section class="py-16">
+    <div class="container mx-auto px-4">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-3xl font-bold">Latest Recipes</h2>
+            <a href="{% url 'recipes' %}" class="text-primary hover:underline">View All</a>
+        </div>
+        <div class="grid md:grid-cols-4 gap-6">
+            {% for recipe in recent_recipes %}
+            <div class="recipe-card hover:shadow-lg transition-shadow">
+                <img src="{{ recipe.image.url }}" alt="{{ recipe.title }}" class="w-full h-48 object-cover rounded-t">
+                <div class="p-4">
+                    <h3 class="font-semibold mb-2">{{ recipe.title }}</h3>
+                    <div class="flex items-center mb-2">
+                        <div class="stars">★★★★★</div>
+                        <span class="text-sm text-gray-600">({{ recipe.ratings_count }})</span>
+                    </div>
+                    <p class="text-sm text-gray-600">By {{ recipe.author }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Stats Section -->
+<section class="py-16 bg-primary text-white">
+    <div class="container mx-auto px-4">
+        <div class="grid md:grid-cols-4 gap-8 text-center">
+            <div class="stat-card">
+                <div class="text-4xl font-bold mb-2">{{ stats.recipes_count }}</div>
+                <div>Recipes Shared</div>
+            </div>
+            <div class="stat-card">
+                <div class="text-4xl font-bold mb-2">{{ stats.users_count }}</div>
+                <div>Active Users</div>
+            </div>
+            <div class="stat-card">
+                <div class="text-4xl font-bold mb-2">{{ stats.reviews_count }}</div>
+                <div>Reviews Written</div>
+            </div>
+            <div class="stat-card">
+                <div class="text-4xl font-bold mb-2">{{ stats.ratings_count }}</div>
+                <div>Recipe Ratings</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Testimonials -->
+<section class="py-16">
+    <div class="container mx-auto px-4">
+        <h2 class="text-3xl font-bold text-center mb-12">What Our Community Says</h2>
+        <div class="grid md:grid-cols-3 gap-8">
+            {% for testimonial in testimonials %}
+            <div class="testimonial-card bg-white p-6 rounded-lg shadow">
+                <div class="stars text-yellow-400 mb-4">★★★★★</div>
+                <p class="mb-4">"{{ testimonial.content }}"</p>
+                <div class="flex items-center">
+                    <img src="{{ testimonial.user.avatar.url }}" alt="{{ testimonial.user.name }}" class="w-12 h-12 rounded-full mr-4">
+                    <div>
+                        <div class="font-semibold">{{ testimonial.user.name }}</div>
+                        <div class="text-sm text-gray-600">{{ testimonial.user.location }}</div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 bg-gradient-secondary text-white text-center">
+    <div class="container mx-auto px-4">
+        <h2 class="text-4xl font-bold mb-6">Ready to Start Cooking?</h2>
+        <p class="text-xl mb-8">Join our community and share your culinary masterpieces with the world.</p>
+        <a href="{% url 'signup' %}" class="btn-primary-large">Create Your Account</a>
+    </div>
+</section>
+{% endblock %}

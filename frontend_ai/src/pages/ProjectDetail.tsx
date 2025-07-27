@@ -51,6 +51,7 @@ const ProjectDetail: React.FC = () => {
   const [hasNewTerminalActivity, setHasNewTerminalActivity] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sessionStartTime] = useState(new Date());
+  const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -64,11 +65,19 @@ const ProjectDetail: React.FC = () => {
     setSearchParams({ tab: tabId }, { replace: true });
   };
 
-  // Initialize tab from URL on mount
+  // Initialize tab from URL on mount and capture prompt parameter
   useEffect(() => {
     const urlTab = searchParams.get('tab');
+    const promptParam = searchParams.get('prompt');
+    
     if (urlTab && ['chat', 'terminal'].includes(urlTab) && urlTab !== activeTab) {
       setActiveTab(urlTab);
+    }
+    
+    if (promptParam) {
+      setInitialPrompt(decodeURIComponent(promptParam));
+      console.log('🎯 ProjectDetail captured prompt:', decodeURIComponent(promptParam));
+      // Let ChatInterface handle the URL cleaning after it processes the prompt
     }
   }, []);
 
@@ -503,7 +512,7 @@ const ProjectDetail: React.FC = () => {
           <div className={`h-full ${error ? 'pt-12' : ''}`}>
             {activeTab === 'chat' && (
               <div className="h-full relative">
-                <ChatWithFiles projectId={project.id} />
+                <ChatWithFiles projectId={project.id} initialPrompt={initialPrompt} />
                 
                 {/* Enhanced Mini Terminal Preview */}
                 {terminalActivity && hasNewTerminalActivity && (

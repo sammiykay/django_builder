@@ -1,0 +1,111 @@
+<!-- Hero Section -->
+<section class="hero bg-gradient-primary min-h-[600px] flex items-center">
+    <div class="container mx-auto px-4">
+        <div class="max-w-3xl mx-auto text-center">
+            <h1 class="text-4xl md:text-6xl font-bold text-white mb-6">Share Your Stories with the World</h1>
+            <p class="text-xl text-white/90 mb-8">Create, connect, and inspire through meaningful content</p>
+            <div class="flex gap-4 justify-center">
+                <a href="{% url 'post_create' %}" class="btn-primary">Start Writing</a>
+                <a href="{% url 'blog' %}" class="btn-secondary">Explore Posts</a>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section class="py-16 bg-white">
+    <div class="container mx-auto px-4">
+        <h2 class="text-3xl font-bold text-center mb-12">Why Choose Simple Blog</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="feature-card">
+                <i class="fas fa-pen-fancy text-3xl text-primary mb-4"></i>
+                <h3 class="text-xl font-semibold mb-3">Rich Text Editor</h3>
+                <p>Create beautiful posts with our intuitive editor</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-comments text-3xl text-primary mb-4"></i>
+                <h3 class="text-xl font-semibold mb-3">Engaging Discussions</h3>
+                <p>Foster meaningful conversations with threaded comments</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-share-alt text-3xl text-primary mb-4"></i>
+                <h3 class="text-xl font-semibold mb-3">Social Sharing</h3>
+                <p>Reach wider audiences with integrated sharing tools</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Recent Posts -->
+<section class="py-16 bg-gray-50">
+    <div class="container mx-auto px-4">
+        <h2 class="text-3xl font-bold text-center mb-12">Latest Stories</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {% for post in recent_posts %}
+            <div class="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow">
+                {% if post.featured_image %}
+                <img src="{{ post.featured_image.url }}" alt="{{ post.title }}" class="w-full h-48 object-cover">
+                {% endif %}
+                <div class="p-6">
+                    <h3 class="text-xl font-semibold mb-3">{{ post.title }}</h3>
+                    <p class="text-gray-600 mb-4">{{ post.excerpt }}</p>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-500">{{ post.created_at|date }}</span>
+                        <a href="{% url 'post_detail' post.slug %}" class="text-primary hover:underline">Read More</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Stats Section -->
+<section class="py-16 bg-white">
+    <div class="container mx-auto px-4">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            <div class="stat-card">
+                <span class="text-4xl font-bold text-primary">{{ total_posts }}</span>
+                <p class="text-gray-600">Posts Published</p>
+            </div>
+            <div class="stat-card">
+                <span class="text-4xl font-bold text-primary">{{ total_users }}</span>
+                <p class="text-gray-600">Active Writers</p>
+            </div>
+            <div class="stat-card">
+                <span class="text-4xl font-bold text-primary">{{ total_comments }}</span>
+                <p class="text-gray-600">Comments</p>
+            </div>
+            <div class="stat-card">
+                <span class="text-4xl font-bold text-primary">{{ total_views }}</span>
+                <p class="text-gray-600">Monthly Readers</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-16 bg-gradient-secondary text-white text-center">
+    <div class="container mx-auto px-4">
+        <h2 class="text-3xl font-bold mb-6">Ready to Start Your Blog?</h2>
+        <p class="text-xl mb-8">Join our community of writers and share your perspective with the world</p>
+        <div class="flex gap-4 justify-center">
+            <a href="{% url 'register' %}" class="btn-white">Sign Up Now</a>
+            <a href="{% url 'about' %}" class="btn-outline-white">Learn More</a>
+        </div>
+    </div>
+</section>
+
+<!-- Newsletter Section -->
+<section class="py-16 bg-gray-50">
+    <div class="container mx-auto px-4 max-w-xl text-center">
+        <h2 class="text-3xl font-bold mb-6">Stay Updated</h2>
+        <p class="text-gray-600 mb-8">Subscribe to our newsletter for the latest posts and updates</p>
+        <form class="flex gap-4" method="POST" action="{% url 'newsletter_signup' %}">
+            {% csrf_token %}
+            <input type="email" name="email" placeholder="Enter your email" class="flex-1 px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 focus:ring-primary">
+            <button type="submit" class="btn-primary">Subscribe</button>
+        </form>
+    </div>
+</section>
+{% endblock %}

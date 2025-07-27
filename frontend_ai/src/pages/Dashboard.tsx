@@ -123,22 +123,39 @@ const Dashboard: React.FC = () => {
     e.preventDefault();
     if (!userInput.trim() || isGenerating) return;
 
+    console.log('🎯 Dashboard handleSubmit started with input:', userInput.trim());
     setIsGenerating(true);
+    
     try {
-      // Use quick create and generate to actually build the Django project
-      const result = await apiService.quickCreateAndGenerate(userInput.trim());
+      // Create project first (without generation)
+      const createData = {
+        name: userInput.trim().substring(0, 50).replace(/[^a-zA-Z0-9\s]/g, '').trim() || 'New Project',
+        description: userInput.trim(),
+        project_type: 'custom',
+        complexity_level: 'medium'
+      };
       
-      if (result.success) {
-        // Navigate to the project page
-        navigate(`/project/${result.project_id}`);
+      console.log('🎯 Dashboard creating project with data:', createData);
+      const project = await apiService.createProject(createData);
+      console.log('🎯 Dashboard project created:', project);
+      
+      if (project.id) {
+        // Navigate to AI Workspace with the initial prompt
+        const navigationUrl = `/project/${project.id}?tab=chat&prompt=${encodeURIComponent(userInput.trim())}`;
+        console.log('🎯 Dashboard navigating to:', navigationUrl);
+        console.log('🎯 User input was:', userInput.trim());
+        console.log('🎯 Encoded prompt:', encodeURIComponent(userInput.trim()));
+        navigate(navigationUrl);
+        console.log('🎯 Dashboard navigate() called successfully');
       } else {
-        console.error('Failed to create project:', result.error);
-        alert('Failed to create project: ' + (result.error || 'Unknown error'));
+        console.error('Failed to create project - no ID:', project);
+        alert('Failed to create project. Please try again.');
       }
     } catch (error) {
-      console.error('Failed to create project:', error);
+      console.error('Failed to create project - error:', error);
       alert('Failed to create project. Please try again.');
     } finally {
+      console.log('🎯 Dashboard handleSubmit finished');
       setIsGenerating(false);
     }
   };
@@ -231,6 +248,13 @@ const Dashboard: React.FC = () => {
                     <button
                       type="submit"
                       disabled={!userInput.trim() || isGenerating}
+                      onClick={(e) => {
+                        console.log('🎯 Dashboard button clicked!', { userInput: userInput.trim(), isGenerating });
+                        if (!userInput.trim() || isGenerating) {
+                          console.log('🎯 Dashboard button click prevented by validation');
+                          e.preventDefault();
+                        }
+                      }}
                       className="group/btn relative bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 text-white px-8 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center space-x-3 disabled:cursor-not-allowed transform hover:scale-105 disabled:hover:scale-100"
                     >
                       {isGenerating ? (
@@ -292,6 +316,7 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
       </div>
     </AppLayout>
   );

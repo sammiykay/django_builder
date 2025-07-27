@@ -4,6 +4,7 @@ import Card from '../components/ui/Card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { SimpleBillingDashboard } from '../components/billing/SimpleBillingDashboard';
 import { TokenUsageChart } from '../components/billing/TokenUsageChart';
+import UsageAnalyticsDashboard from '../components/billing/UsageAnalyticsDashboard';
 import AdvancedFeatures from '../components/billing/AdvancedFeatures';
 import PaymentHistory from '../components/billing/PaymentHistory';
 import AppLayout from '../components/layout/AppLayout';
@@ -368,8 +369,8 @@ export const BillingPage: React.FC = () => {
 
               {activeTab === 'analytics' && (
                 <div className="space-y-8">
-                  <div className="bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8">
-                    <TokenUsageChart />
+                  <div className="bg-gray-900/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl">
+                    <UsageAnalyticsDashboard onUpgradeClick={() => setActiveTab('features')} />
                   </div>
                   
                   {/* Enhanced Analytics Cards */}

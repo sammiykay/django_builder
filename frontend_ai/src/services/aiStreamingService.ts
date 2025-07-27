@@ -1,6 +1,12 @@
 interface StreamingMessage {
-  type: 'file_created' | 'file_updated' | 'generation_started' | 'generation_completed' | 'error';
-  data: any;
+  type: 'connected' | 'file_created' | 'file_updated' | 'file_started' | 'file_content_streaming' | 'file_completed' | 'generation_started' | 'generation_completed' | 'status_update' | 'status' | 'error';
+  data?: any;
+  message?: string;
+  status?: string;
+  progress?: number;
+  filename?: string;
+  content?: string;
+  token?: string;
 }
 
 interface FileStreamData {
@@ -8,6 +14,8 @@ interface FileStreamData {
   content: string;
   action: 'create' | 'update' | 'delete';
   progress?: number;
+  file?: string; // Backend sends 'file' field
+  content_preview?: string;
 }
 
 class AIStreamingService {
@@ -90,26 +98,82 @@ class AIStreamingService {
   }
 
   private handleMessage(message: StreamingMessage) {
-    console.log('📨 AI Streaming message:', message);
+    console.log('📨 AI Streaming message:', JSON.stringify(message, null, 2));
 
     switch (message.type) {
+      case 'connected':
+        this.notifyStatusListeners({ type: 'connected', connected: true, ...message.data });
+        console.log('✅ AI Streaming service connected');
+        break;
+        
       case 'file_created':
       case 'file_updated':
-        this.notifyFileListeners(message.data as FileStreamData);
+        // Transform backend format to frontend format
+        const fileData: FileStreamData = {
+          filename: message.data?.file || message.file || 'unknown',
+          content: message.data?.content || message.content || '',
+          action: message.type === 'file_created' ? 'create' : 'update',
+          progress: message.data?.progress || message.progress,
+          file: message.data?.file || message.file,
+          content_preview: message.data?.content_preview || message.content_preview
+        };
+        this.notifyFileListeners(fileData);
+        break;
+        
+      case 'file_started':
+        // New file being created - bolt.new style
+        this.notifyFileListeners({
+          filename: message.data?.filename || message.filename || 'unknown',
+          content: '',
+          action: 'create',
+          file: message.data?.filename || message.filename
+        });
+        break;
+        
+      case 'file_content_streaming':
+        // Token-by-token content streaming - bolt.new style
+        this.notifyFileListeners({
+          filename: message.data?.filename || message.filename || 'unknown',
+          content: message.data?.content || message.content || '',
+          action: 'update',
+          file: message.data?.filename || message.filename,
+          token: message.data?.token || message.token
+        });
+        break;
+        
+      case 'file_completed':
+        // File generation completed
+        this.notifyFileListeners({
+          filename: message.data?.filename || message.filename || 'unknown',
+          content: message.data?.content || message.content || '',
+          action: 'create',
+          file: message.data?.filename || message.filename
+        });
+        this.notifyGenerationListeners(`✅ Completed: ${message.data?.filename || message.filename}`);
         break;
       
       case 'generation_started':
-        this.notifyGenerationListeners(`🚀 Starting AI generation: ${message.data.description || 'Generating project files...'}`);
+        this.notifyGenerationListeners(`🚀 Starting AI generation: ${message.data?.description || 'Generating project files...'}`);
         this.notifyStatusListeners({ type: 'generation_started', ...message.data });
         break;
       
       case 'generation_completed':
-        this.notifyGenerationListeners(`✅ Generation completed! Created ${message.data.files_count || 0} files.`);
+        this.notifyGenerationListeners(`✅ Generation completed! Created ${message.data?.files_count || 0} files.`);
         this.notifyStatusListeners({ type: 'generation_completed', ...message.data });
         break;
       
+      case 'status_update':
+        this.notifyGenerationListeners(message.data?.message || message.message || 'Status update...');
+        this.notifyStatusListeners({ type: 'status_update', ...message.data });
+        break;
+        
+      case 'status':
+        this.notifyGenerationListeners(message.message || 'Status update...');
+        this.notifyStatusListeners({ type: 'status', status: message.status, progress: message.progress });
+        break;
+      
       case 'error':
-        this.notifyGenerationListeners(`❌ Error: ${message.data.error}`);
+        this.notifyGenerationListeners(`❌ Error: ${message.data?.error || message.message}`);
         this.notifyStatusListeners({ type: 'error', ...message.data });
         break;
       

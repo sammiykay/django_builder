@@ -8,6 +8,7 @@ import RealTimeFileExplorer from './RealTimeFileExplorer';
 interface AIGeneratorProps {
   projectId: string;
   onGenerationComplete?: () => void;
+  initialPrompt?: string;
 }
 
 interface GenerationProgress {
@@ -22,8 +23,8 @@ interface GenerationProgress {
   requirementsGenerated?: boolean;
 }
 
-const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComplete }) => {
-  const [prompt, setPrompt] = useState('');
+const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComplete, initialPrompt }) => {
+  const [prompt, setPrompt] = useState(initialPrompt || '');
   const [progress, setProgress] = useState<GenerationProgress>({
     status: 'idle',
     message: '',
@@ -35,6 +36,13 @@ const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onGenerationComple
   const [showToast, setShowToast] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const [showFileExplorer, setShowFileExplorer] = useState(false);
+
+  // Auto-trigger generation if initialPrompt is provided
+  useEffect(() => {
+    if (initialPrompt && initialPrompt.trim() && progress.status === 'idle') {
+      handleGenerate();
+    }
+  }, [initialPrompt]);
 
   const examplePrompts = [
     'Create a blog application with user authentication and post management',

@@ -22,13 +22,14 @@ class ConversationHandler:
     Provides continuity across sessions and intelligent context management.
     """
     
-    def __init__(self, project: Project = None, container_service: ContainerService = None):
+    def __init__(self, project: Project = None, container_service: ContainerService = None, user=None):
         self.project = project
         self.container_service = container_service or ContainerService()
-        self.claude_service = ClaudeService()
+        self.claude_service = ClaudeService(user=user)
         self.code_merger = CodeMerger()
         self.chat_thread = None
         self.current_session = None
+        self.user = user
         
     def handle_message(self, project_id: str, message: str, user=None, 
                       is_error_report: bool = False, error_type: str = '', 
@@ -1042,7 +1043,7 @@ Respond with JSON:
             
             # Get the container service projects directory
             projects_dir = self.container_service.projects_dir
-            generator = SmartProjectGenerator(projects_dir)
+            generator = SmartProjectGenerator(projects_dir, user=self.user)
             
             # Generate a simple enhancement
             simple_prompt = f"""
