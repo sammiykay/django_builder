@@ -2041,17 +2041,34 @@ urlpatterns = [
                 if not prompt or not prompt.strip():
                     raise ValueError("Empty or invalid prompt provided")
                 
+                # Extract filename from prompt if possible
+                import re
+                filename_match = re.search(r'file[:\s]+([^\s]+\.(py|html|css|js|json|yml|txt|md))', prompt.lower())
+                current_filename = filename_match.group(1) if filename_match else None
+                file_start_sent = False
+                
                 # Add callback for real-time updates
                 def stream_callback(text_chunk):
-                    nonlocal full_content
+                    nonlocal full_content, file_start_sent
                     full_content += text_chunk
                     if callback_func:
                         try:
+                            # Send file start event once
+                            if current_filename and not file_start_sent and len(full_content) > 10:
+                                file_start_sent = True
+                                callback_func({
+                                    'type': 'file_start',
+                                    'filename': current_filename
+                                })
+                            
+                            # Send token chunks
                             callback_func({
                                 'type': 'content_chunk',
                                 'chunk': text_chunk,
+                                'token': text_chunk,  # For compatibility
                                 'total_length': len(full_content),
-                                'attempt': attempt + 1
+                                'attempt': attempt + 1,
+                                'filename': current_filename
                             })
                         except Exception as cb_error:
                             logger.warning(f"Callback error: {cb_error}")

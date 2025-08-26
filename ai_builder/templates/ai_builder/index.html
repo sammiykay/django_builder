@@ -48,6 +48,81 @@
             animation: gradientMove 3s ease infinite;
         }
         
+        /* Enhanced streaming animations */
+        .code-streaming {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .code-streaming::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 2px;
+            height: 100%;
+            background: #10b981;
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+        
+        .token-appear {
+            animation: tokenFadeIn 0.1s ease-out;
+        }
+        
+        @keyframes tokenFadeIn {
+            from { 
+                opacity: 0;
+                transform: translateY(2px);
+            }
+            to { 
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .file-generating {
+            border-left: 3px solid #3b82f6;
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 0%, transparent 100%);
+            animation: fileGenerate 1s ease-in-out infinite alternate;
+        }
+        
+        @keyframes fileGenerate {
+            0% { border-left-color: #3b82f6; }
+            100% { border-left-color: #10b981; }
+        }
+        
+        .thinking-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+        
+        .thinking-dots span {
+            width: 8px;
+            height: 8px;
+            background: #3b82f6;
+            border-radius: 50%;
+            animation: thinking 1.4s infinite ease-in-out;
+        }
+        
+        .thinking-dots span:nth-child(1) { animation-delay: -0.32s; }
+        .thinking-dots span:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes thinking {
+            0%, 80%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
         @keyframes gradientMove {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }

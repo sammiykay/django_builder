@@ -527,6 +527,9 @@ Include code examples and step-by-step instructions.
         
         def generate_stream():
             try:
+                # Import enhanced streaming service
+                from .services.enhanced_streaming import EnhancedStreamingService, create_streaming_callback
+                
                 # Track prompt evolution for dynamic building
                 self._update_project_with_prompt(project, user_prompt)
                 
@@ -542,72 +545,112 @@ Include code examples and step-by-step instructions.
                     content=user_prompt
                 )
                 
-                # Send initial status
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Starting project generation...', 'status': 'initializing'})}\n\n"
+                # Initialize enhanced streaming
+                streaming_service = EnhancedStreamingService()
+                
+                # Send initial thinking status with typing animation
+                yield f"data: {json.dumps({'type': 'thinking', 'message': 'AI is thinking about your request...', 'progress': 0})}\n\n"
+                time.sleep(0.5)  # Brief pause for effect
                 
                 start_time = time.time()
                 
                 # Check if this is a new project or existing project
                 if not project.django_project_created or project.files.count() == 0:
-                    # NEW PROJECT: Use smart project generator with streaming
+                    # NEW PROJECT: Use smart project generator with enhanced streaming
                     container_service = ContainerService()
                     generator = SmartProjectGenerator(container_service.projects_dir, user=request.user)
                     
-                    yield f"data: {json.dumps({'type': 'status', 'message': 'Analyzing your requirements...', 'status': 'analyzing'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'analyzing', 'message': 'Analyzing your requirements and planning the project structure...', 'progress': 5})}\n\n"
                     
-                    # Create a generator-based streaming solution
-                    # We'll use a queue to collect updates from the callback
-                    import queue
-                    import threading
+                    # Use direct streaming without queue for lower latency
+                    streamed_updates = []
+                    generation_result = None
+                    generation_error = None
                     
-                    update_queue = queue.Queue()
-                    generation_complete = threading.Event()
-                    
-                    def stream_callback(update):
-                        """Send real-time updates via SSE"""
-                        update_queue.put(update)
-                    
-                    # Start generation in a separate thread
-                    def run_generation():
-                        try:
-                            result = generator.generate_project_from_prompt_streaming(
-                                user_prompt, 
-                                str(project.id),
-                                progress_callback=stream_callback
-                            )
-                            update_queue.put({'_result': result})
-                        except Exception as e:
-                            update_queue.put({'_error': str(e)})
-                        finally:
-                            generation_complete.set()
-                    
-                    generation_thread = threading.Thread(target=run_generation)
-                    generation_thread.start()
-                    
-                    # Stream updates as they come
-                    result = None
-                    while not generation_complete.is_set() or not update_queue.empty():
-                        try:
-                            update = update_queue.get(timeout=1.0)
+                    def enhanced_stream_callback(update):
+                        """Enhanced callback with real-time token streaming"""
+                        nonlocal streamed_updates
+                        
+                        # Process different types of updates
+                        if isinstance(update, dict):
+                            update_type = update.get('type', '')
                             
-                            # Check for special messages
-                            if '_result' in update:
-                                result = update['_result']
-                                break
-                            elif '_error' in update:
-                                error_msg = f"Generation failed: {update['_error']}"
-                                yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
-                                return
-                            else:
-                                # Regular update
-                                yield f"data: {json.dumps(update)}\n\n"
+                            # Convert to enhanced event types
+                            if update_type == 'status':
+                                status = update.get('status', '')
+                                if status == 'analyzing':
+                                    streamed_updates.append({
+                                        'type': 'analyzing',
+                                        'message': update.get('message', 'Analyzing requirements...'),
+                                        'progress': update.get('progress', 10)
+                                    })
+                                elif status == 'generating':
+                                    streamed_updates.append({
+                                        'type': 'planning',
+                                        'message': 'Planning Django project structure...',
+                                        'progress': update.get('progress', 20)
+                                    })
+                            
+                            elif update_type == 'file_content_streaming':
+                                # Enhanced: Stream code token by token
+                                filename = update.get('filename', '')
+                                content = update.get('content', '')
                                 
-                        except queue.Empty:
-                            # Send keep-alive
-                            yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-                            continue
+                                # Send file start event
+                                streamed_updates.append({
+                                    'type': 'file_start',
+                                    'filename': filename,
+                                    'language': streaming_service._detect_language(filename)
+                                })
+                                
+                                # Stream content in smaller chunks for smooth effect
+                                chunk_size = 10  # Smaller chunks for smoother streaming
+                                for i in range(0, len(content), chunk_size):
+                                    chunk = content[i:i + chunk_size]
+                                    streamed_updates.append({
+                                        'type': 'code_token',
+                                        'filename': filename,
+                                        'token': chunk,
+                                        'progress': update.get('progress', 30)
+                                    })
+                            
+                            elif update_type == 'file_created':
+                                streamed_updates.append({
+                                    'type': 'file_complete',
+                                    'filename': update.get('file'),
+                                    'path': update.get('path'),
+                                    'progress': update.get('progress', 50)
+                                })
+                            
+                            else:
+                                # Pass through other updates
+                                streamed_updates.append(update)
                     
-                    generation_thread.join()
+                    # Run generation with enhanced callback
+                    try:
+                        generation_result = generator.generate_project_from_prompt_streaming(
+                            user_prompt, 
+                            str(project.id),
+                            progress_callback=enhanced_stream_callback
+                        )
+                        
+                        # Stream all collected updates
+                        for update in streamed_updates:
+                            yield f"data: {json.dumps(update)}\n\n"
+                            # Small delay for visual streaming effect
+                            if update.get('type') == 'code_token':
+                                time.sleep(0.001)  # Very small delay for token streaming
+                            
+                    except Exception as e:
+                        generation_error = str(e)
+                        logger.error(f"Generation error: {e}")
+                    
+                    # Handle result
+                    if generation_error:
+                        yield f"data: {json.dumps({'type': 'error', 'message': f'Generation failed: {generation_error}'})}\n\n"
+                        return
+                    
+                    result = generation_result
                     
                     if not result.get('success'):
                         project.ai_generation_status = 'error'

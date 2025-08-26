@@ -1049,18 +1049,126 @@ Last Activity: ${new Date(stats.last_activity).toLocaleString()}`);
         statusText.textContent = 'Initializing...';
         fileFeed.innerHTML = '';
         
+        // Add code preview area for real-time streaming
+        const codePreview = document.createElement('div');
+        codePreview.id = 'code-preview';
+        codePreview.className = 'hidden mt-4 p-4 bg-gray-900 text-gray-100 rounded font-mono text-sm overflow-auto max-h-64';
+        streamingProgress.appendChild(codePreview);
+        
         // Create EventSource for streaming
         const token = this.accessToken;
         const url = `/api/projects/${this.currentProject.id}/smart_generate_stream/?token=${token}&message=${encodeURIComponent(message)}`;
         
         const eventSource = new EventSource(url);
         let lastProgress = 0;
+        let currentFileContent = {};
+        let activeFile = null;
         
         eventSource.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
                 
                 switch (data.type) {
+                    case 'thinking':
+                        statusText.textContent = data.message;
+                        statusText.classList.add('animate-pulse');
+                        progressBar.style.width = '2%';
+                        progressText.textContent = '2%';
+                        break;
+                        
+                    case 'analyzing':
+                        statusText.textContent = data.message;
+                        statusText.classList.remove('animate-pulse');
+                        if (data.progress) {
+                            progressBar.style.width = `${data.progress}%`;
+                            progressText.textContent = `${Math.round(data.progress)}%`;
+                        }
+                        break;
+                        
+                    case 'planning':
+                        statusText.textContent = data.message;
+                        if (data.progress) {
+                            progressBar.style.width = `${data.progress}%`;
+                            progressText.textContent = `${Math.round(data.progress)}%`;
+                        }
+                        break;
+                        
+                    case 'file_start':
+                        // New file starting
+                        activeFile = data.filename;
+                        currentFileContent[activeFile] = '';
+                        
+                        // Show code preview
+                        codePreview.classList.remove('hidden');
+                        codePreview.innerHTML = `<div class="text-green-400 mb-2">// Creating: ${data.filename}</div><pre id="file-content-${activeFile.replace(/[^a-zA-Z0-9]/g, '_')}" class="text-gray-300"></pre>`;
+                        
+                        // Add to file feed
+                        const fileStartItem = document.createElement('div');
+                        fileStartItem.className = 'file-item creating text-xs text-blue-600 bg-blue-50 p-2 rounded border border-blue-200 animate-pulse';
+                        fileStartItem.innerHTML = `⚡ Generating: <span class="font-mono">${data.filename}</span>`;
+                        fileFeed.appendChild(fileStartItem);
+                        fileFeed.scrollTop = fileFeed.scrollHeight;
+                        break;
+                        
+                    case 'code_token':
+                        // Stream code tokens in real-time
+                        if (data.filename && data.token) {
+                            currentFileContent[data.filename] = (currentFileContent[data.filename] || '') + data.token;
+                            
+                            // Update preview with syntax highlighting effect
+                            const contentEl = document.getElementById(`file-content-${data.filename.replace(/[^a-zA-Z0-9]/g, '_')}`);
+                            if (contentEl) {
+                                contentEl.textContent = currentFileContent[data.filename];
+                                // Scroll to bottom to show latest content
+                                codePreview.scrollTop = codePreview.scrollHeight;
+                            }
+                        }
+                        
+                        if (data.progress) {
+                            progressBar.style.width = `${data.progress}%`;
+                            progressText.textContent = `${Math.round(data.progress)}%`;
+                        }
+                        break;
+                        
+                    case 'file_content':
+                        // Batch content update
+                        if (data.filename && data.content) {
+                            currentFileContent[data.filename] = (currentFileContent[data.filename] || '') + data.content;
+                            
+                            const contentEl = document.getElementById(`file-content-${data.filename.replace(/[^a-zA-Z0-9]/g, '_')}`);
+                            if (contentEl) {
+                                contentEl.textContent = currentFileContent[data.filename];
+                                codePreview.scrollTop = codePreview.scrollHeight;
+                            }
+                        }
+                        break;
+                        
+                    case 'file_complete':
+                        // File completed
+                        if (data.progress) {
+                            progressBar.style.width = `${data.progress}%`;
+                            progressText.textContent = `${Math.round(data.progress)}%`;
+                            lastProgress = data.progress;
+                        }
+                        
+                        // Update file feed - mark as complete
+                        const completedItem = document.createElement('div');
+                        completedItem.className = 'file-item complete text-xs text-green-600 bg-green-50 p-2 rounded border border-green-200';
+                        completedItem.innerHTML = `✅ Created: <span class="font-mono">${data.filename}</span>`;
+                        fileFeed.appendChild(completedItem);
+                        fileFeed.scrollTop = fileFeed.scrollHeight;
+                        
+                        // Add to terminal
+                        this.addToTerminal(`✅ Created: ${data.filename}`);
+                        
+                        // Clear from preview after a short delay
+                        setTimeout(() => {
+                            if (activeFile === data.filename) {
+                                codePreview.classList.add('hidden');
+                            }
+                        }, 1000);
+                        break;
+                        
                     case 'status':
                         statusText.textContent = data.message;
                         if (data.status === 'initializing') {
@@ -1070,21 +1178,19 @@ Last Activity: ${new Date(stats.last_activity).toLocaleString()}`);
                         break;
                         
                     case 'file_created':
-                        // Update progress
+                        // Legacy support
                         if (data.progress) {
                             progressBar.style.width = `${data.progress}%`;
                             progressText.textContent = `${Math.round(data.progress)}%`;
                             lastProgress = data.progress;
                         }
                         
-                        // Add file to feed
                         const fileItem = document.createElement('div');
                         fileItem.className = 'file-item creating text-xs text-gray-600 bg-white p-2 rounded border';
                         fileItem.innerHTML = `📄 Created: <span class="font-mono">${data.file}</span>`;
                         fileFeed.appendChild(fileItem);
                         fileFeed.scrollTop = fileFeed.scrollHeight;
                         
-                        // Add to terminal
                         this.addToTerminal(`📄 Created: ${data.file}`);
                         break;
                         
